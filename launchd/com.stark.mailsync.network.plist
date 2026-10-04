@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>Label</key><string>com.stark.mailsync.network</string>
+  <key>ProgramArguments</key><array><string>/bin/zsh</string><string>__HOME__/.stark/mail-sync.sh</string><string>network</string></array>
+  <!-- These change whenever macOS joins a new network or the DNS/route changes -->
+  <key>WatchPaths</key><array>
+    <string>/var/run/resolv.conf</string>
+    <string>/Library/Preferences/SystemConfiguration</string>
+  </array>
+  <key>ThrottleInterval</key><integer>10</integer>
+</dict></plist>

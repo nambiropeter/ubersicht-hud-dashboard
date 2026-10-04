@@ -1,0 +1,11 @@
+# runtime state & personal backups
+.snapshot*
+.mail-sync-last
+*.log
+*.tmp
+dock-backup.plist
+widgets-old/
+# generated images (rebuild with wallpaper.py)
+*.png
+__pycache__/
+.DS_Store

@@ -1,0 +1,38 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Market Terminal</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#07090f;--panel:#0d1220;--line:#1c2a44;--arc:#7fdcff;--gold:#e8c45a;--red:#c8262c}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 85% 0,#2a0b0e,transparent 45%),radial-gradient(circle at 10% 0,#0d1a33,transparent 45%),var(--bg);color:#dfe6f3;font:14px -apple-system,Helvetica,sans-serif}
+header{display:flex;align-items:center;justify-content:space-between;padding:14px 22px;border-bottom:1px solid var(--line)}
+h1{margin:0;font-size:18px;letter-spacing:.25em;color:var(--gold)}h1 span{color:var(--arc)}
+#clock{color:var(--arc);font-variant-numeric:tabular-nums}
+main{display:grid;grid-template-columns:2fr 1fr;grid-template-rows:520px 460px;gap:14px;padding:14px}
+.p{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;box-shadow:0 0 24px #7fdcff10}
+@media(max-width:900px){main{grid-template-columns:1fr;grid-template-rows:auto}.p{min-height:420px}}
+</style></head><body>
+<header><h1>MARKET <span>·</span> TERMINAL</h1><div id="clock"></div></header>
+<div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"></div>
+<script src="https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js" async>
+{"symbols":[{"proName":"FOREXCOM:SPXUSD","title":"S&P 500"},{"proName":"FOREXCOM:NSXUSD","title":"NASDAQ 100"},{"proName":"NASDAQ:AAPL"},{"proName":"NASDAQ:NVDA"},{"proName":"NASDAQ:MSFT"},{"proName":"NASDAQ:TSLA"},{"proName":"NASDAQ:AMZN"},{"proName":"NASDAQ:META"},{"proName":"BITSTAMP:BTCUSD","title":"Bitcoin"}],"colorTheme":"dark","isTransparent":true,"displayMode":"adaptive","locale":"en"}
+</script></div>
+<main>
+<div class="p"><div class="tradingview-widget-container" style="height:100%"><div class="tradingview-widget-container__widget" style="height:100%"></div>
+<script src="https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>
+{"autosize":true,"symbol":"NASDAQ:NVDA","interval":"D","theme":"dark","style":"1","locale":"en","backgroundColor":"#0d1220","allow_symbol_change":true,"watchlist":["NASDAQ:NVDA","NASDAQ:AAPL","NASDAQ:MSFT","NASDAQ:TSLA","NASDAQ:GOOGL","NASDAQ:AMZN"]}
+</script></div></div>
+<div class="p"><div class="tradingview-widget-container" style="height:100%"><div class="tradingview-widget-container__widget"></div>
+<script src="https://s3.tradingview.com/external-embedding/embed-widget-timeline.js" async>
+{"feedMode":"all_symbols","isTransparent":true,"displayMode":"regular","width":"100%","height":"100%","colorTheme":"dark","locale":"en"}
+</script></div></div>
+<div class="p"><div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"></div>
+<script src="https://s3.tradingview.com/external-embedding/embed-widget-stock-heatmap.js" async>
+{"dataSource":"SPX500","grouping":"sector","blockSize":"market_cap_basic","blockColor":"change","locale":"en","colorTheme":"dark","hasTopBar":false,"isZoomEnabled":true,"hasSymbolTooltip":true,"isTransparent":true,"width":"100%","height":"100%"}
+</script></div></div>
+<div class="p"><div class="tradingview-widget-container"><div class="tradingview-widget-container__widget"></div>
+<script src="https://s3.tradingview.com/external-embedding/embed-widget-hotlists.js" async>
+{"colorTheme":"dark","dateRange":"1D","exchange":"US","showChart":true,"locale":"en","isTransparent":true,"showSymbolLogo":true,"width":"100%","height":"100%"}
+</script></div></div>
+</main>
+<script>setInterval(()=>{document.getElementById('clock').textContent='J.A.R.V.I.S. · NYSE '+new Date().toLocaleTimeString('en-US',{timeZone:'America/New_York'})+' ET'},1000)</script>
+</body></html>
