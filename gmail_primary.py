@@ -5,7 +5,7 @@ Gmail's tabs (Primary / Promotions / Social / Updates) only exist on Google's si
 Gmail directly over IMAP with an app password kept in the Keychain (service "desktop-widget-gmail").
 Without that password it passes the Mail.app JSON through unchanged.
 """
-import email.header, email.utils, imaplib, json, re, subprocess, sys
+import email.header, email.utils, imaplib, json, os, re, subprocess, sys
 
 SERVICE = "desktop-widget-gmail"  # Keychain item: account = Gmail address, password = app password
 
@@ -13,6 +13,11 @@ def dec(v):
     return str(email.header.make_header(email.header.decode_header(v or ""))).strip()
 
 data = json.loads(sys.stdin.read() or '{"running":false,"mail":[]}')
+data["mail_app"] = data.get("running", False)  # Mail.app open → iCloud is being read and synced
+try:  # last successful Mail.app sync, written by mail-sync.sh
+    data["icloud_synced"] = int(open(os.path.expanduser("~/.stark/.mail-sync-last")).read())
+except (OSError, ValueError):
+    pass
 def keychain(*args):
     return subprocess.run(["security", "find-generic-password", "-s", SERVICE, *args],
                           capture_output=True, text=True).stdout
@@ -40,6 +45,10 @@ if pw and USER:
         data["unread"] = sum(counts.values()) + len(ids)
         data["counts"] = {"Gmail": len(ids), **counts}
         data["running"] = True
-    except Exception as e:
+    except Exception as e:  # keep the Gmail tab, flagged, instead of silently dropping it
         data["gmail_error"] = str(e)[:120]
+        data["mail"] = [m for m in data.get("mail", []) if m["acc"] != "Google"]
+        data["accounts"] = ["Gmail"] + [a for a in data.get("accounts", []) if a != "Google"]
+        data["counts"] = {"Gmail": 0, **{k: v for k, v in data.get("counts", {}).items() if k != "Google"}}
+        data["running"] = True
 print(json.dumps(data))

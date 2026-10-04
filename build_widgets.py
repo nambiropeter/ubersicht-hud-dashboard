@@ -43,6 +43,10 @@ SHARED = """
   .up { color:#4fd18b } .dn { color:#ff6b6b } .muted { color:#9b938a } .dim { color:#6b645d }
   .num { font-variant-numeric: tabular-nums; letter-spacing:-.01em }
   .lbl { font: 600 8.5px Orbitron, -apple-system, sans-serif; letter-spacing:.24em; color:#857d75 }
+  .syncwarn { position:absolute; top:11px; right:14px; z-index:5; display:none; align-items:center; gap:6px; max-width:210px;
+              height:24px; padding:0 9px; border-radius:7px; background:rgba(58,20,18,.94); border:1px solid rgba(255,107,107,.5);
+              font: 600 10px -apple-system, sans-serif; letter-spacing:.03em; color:#ffc2b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .syncwarn.on { display:flex }
 """
 
 AGO = """const ago = d => {
@@ -100,6 +104,39 @@ const session = (ex, now) => {
   return { open, hm, dur };
 };"""
 
+
+SYNC = """// Sync warning: a red badge over the header when this panel's data fails, comes back empty, or stops updating.
+// A widget can define `problem = data => "message" | null` for its own checks (e.g. Gmail login failing).
+const syncCheck = (name, props) => {
+  const S = (window.__sync = window.__sync || {}), s = (S[name] = S[name] || { ok: 0, born: Date.now() });
+  const out = (props.output || "").trim(); let msg = null, data;
+  if (props.error) msg = "Script failed";
+  else if (!out) msg = s.ok ? "No data" : null;  // empty before the first run is just loading
+  else { try { data = JSON.parse(out); } catch (e) { msg = "Unreadable data"; } }
+  if (!msg && Array.isArray(data) && !data.length) msg = "Source sent nothing";
+  if (!msg && data && data.error) msg = data.reason || (typeof data.error === "string" ? data.error : "Source reported an error");
+  if (!msg && data && typeof problem === "function") msg = problem(data);
+  // offline explains every failure at once (connections panel and the browser both report it)
+  if (msg && (window.__offline || !navigator.onLine)) msg = "No internet";
+  if (!msg && out) { s.ok = Date.now(); s.last = props.output; }
+  s.msg = msg; setTimeout(syncPaint, 0);
+  // when the script fails, keep showing the last good data under the warning instead of a blank panel
+  return (props.error || !out) && s.last ? { ...props, output: s.last, error: null } : props;
+};
+const syncAgo = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "just now" : m < 60 ? m + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago"; };
+const syncPaint = () => document.querySelectorAll("[data-sync]").forEach(el => {
+  const s = (window.__sync || {})[el.dataset.sync]; if (!s) return;
+  // never loaded → warn after 2 min; otherwise after missing ~3 refreshes
+  const stale = Date.now() - (s.ok || s.born) > (s.ok ? Math.max(3 * +el.dataset.every, 2 * 60000) : 2 * 60000);
+  // Übersicht pauses refreshes while offline, so check the connection here too (internet panels only)
+  const offline = el.dataset.net && (!navigator.onLine || window.__offline);
+  const msg = offline ? "No internet" : s.msg || (stale ? "Not updating" : "");
+  el.textContent = msg ? "⚠ " + msg + (s.ok ? " · " + syncAgo(s.ok) : "") : "";
+  el.title = msg ? "This panel's data isn't syncing. It will clear itself once the source responds again." : "";
+  el.classList.toggle("on", !!msg); });
+// one shared timer that also catches scripts that hang; replaced on every hot reload so it runs the newest code
+clearInterval(window.__syncTimer); window.__syncTimer = setInterval(syncPaint, 10000);
+window.onoffline = window.ononline = () => syncPaint();  // react to Wi-Fi changes instantly"""
 
 # ── Sci-fi HUD palette: holographic cyan, Stark gold, neon green/red ──
 THEME = [
@@ -176,6 +213,8 @@ def _cursor(color, size=28):
 CURSOR = _cursor("#f5b14c") + ", crosshair"
 CURSOR_HOT = _cursor("#ffd696") + ", pointer"
 
+NET = {"weather", "markets", "ai-wire", "movers", "mail", "connections"}  # panels that need the internet
+
 def widget(name, body):
     x, y, w, h = POS.get(name, (0, 0, 0, 0)); y += DY
     body = (body.replace("%%SHARED%%", SHARED)
@@ -192,6 +231,14 @@ def widget(name, body):
         body = re.sub(r"(return \(\s*<div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', body)
         body = re.sub(r"(return <div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', body)
         body = body.replace("\nexport const render", "\n" + HUD + "\nexport const render", 1)
+    if name not in ("aa-links", "clock"):
+        # badge goes in every root the render returns (e.g. loading + loaded), not in helper components above it
+        head, mark, tail = body.partition("\nexport const render")
+        ref = 'ref={hud("' + name + '")}>'
+        net = ' data-net="1"' if name in NET else ""
+        body = head + mark + tail.replace(ref, ref + '<span className="syncwarn" data-sync="' + name + '"' + net + ' data-every={refreshFrequency} />')
+        body = body.replace("\nexport const render =", "\n" + SYNC + "\nconst __render =", 1)
+        body += '\nexport const render = (p, d) => __render(syncCheck("' + name + '", p), d);'
     with open(os.path.join(W, name + ".jsx"), "w") as f:
         f.write(body + "\n")
 
@@ -363,6 +410,7 @@ export const className = `
   .rl { font-size:9.5px; letter-spacing:.16em; color:#8c8178; font-weight:600; margin-top:8px }
 `;
 const NODES = [[36, 28], [164, 28], [36, 112], [164, 112]];
+const problem = n => (window.__offline = n.ip === "offline" || n.services.every(x => !x.ms)) ? "No internet" : null;
 const col = ms => !ms ? "#6f665f" : ms < 150 ? "#4ade80" : ms < 450 ? "#ffb35c" : "#f87171";
 const rate = b => b > 1048576 ? [(b / 1048576).toFixed(1), "MB/s"] : [(b / 1024).toFixed(0), "KB/s"];
 export const render = ({ output }) => {
@@ -640,6 +688,9 @@ export const className = `
 const savedPick = () => { try { return localStorage.getItem("mail-pick") || "Gmail"; } catch (e) { return "Gmail"; } };
 export const initialState = { output: "", pick: savedPick() };
 export const updateState = (ev, prev) => ev.type === "PICK" ? { ...prev, pick: ev.pick } : { ...prev, output: ev.output, error: ev.error };
+const problem = m => m.gmail_error ? "Gmail not syncing"
+  : m.mail_app === false && m.running ? "Mail closed · iCloud paused"
+  : m.mail_app && m.icloud_synced && Date.now() / 1000 - m.icloud_synced > 25 * 60 ? "iCloud late " + Math.round((Date.now() / 1000 - m.icloud_synced) / 60) + "m" : null;
 const ACC = a => /gmail|google/i.test(a) ? ["GMAIL", "#f87171", "rgba(248,113,113,.12)"] : /icloud/i.test(a) ? ["ICLOUD", "#7fdcff", "rgba(127,220,255,.1)"] : [a.toUpperCase().slice(0, 8), "#ffb35c", "rgba(255,179,92,.1)"];
 const name = f => (f || "").replace(/\s*<.*>\s*$/, "").replace(/^"|"$/g, "") || f;
 const when = d => { const t = new Date(d), now = new Date();
@@ -668,7 +719,8 @@ export const render = ({ output, pick }, dispatch) => {
             return <div key={a}>
               <div className="sec"><span className="acc" style={{ color: c, background: bg }}>{tag}</span>
                 <span className="n">{n} UNREAD</span><span className="line" /></div>
-              {!items.length ? <div className="none">✓ Nothing new in Primary</div>
+              {a === "Gmail" && m.gmail_error ? <div className="none" style={{ color: "#ff6b6b" }}>⚠ Can't reach Gmail right now. Retrying every 30 s.</div>
+                : !items.length ? <div className="none">✓ Nothing new in Primary</div>
                 : items.slice(0, 4).map(x => (
                 <div className={"it" + (x.read ? "" : " unread")} key={x.id + x.acc}
                      onClick={() => run(`open "message://%3c${encodeURIComponent(x.id)}%3e"`)}>
