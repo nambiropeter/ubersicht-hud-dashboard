@@ -285,17 +285,21 @@ WARM = [
     ("#6fe8ff", "#7cc8ff"), ("#b388ff", "#b39cff"),
 ]
 
-# ── HUD cursor: amber SVG crosshair everywhere (the animated ring rides on top) ──
-def _cursor(color, size=28):
-    c = size // 2
-    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}">'
-           f'<g fill="none" stroke="{color}" stroke-width="1.6">'
-           f'<circle cx="{c}" cy="{c}" r="5.5"/>'
-           f'<path d="M{c} 1v6M{c} {size-7}v6M1 {c}h6M{size-7} {c}h6"/></g>'
-           f'<circle cx="{c}" cy="{c}" r="1.6" fill="{color}"/></svg>')
-    # fully escaped: a bare // would start a comment in Übersicht's CSS parser
-    return f'url("data:image/svg+xml,{urllib.parse.quote(svg, safe="")}") {c} {c}'
-CURSOR = _cursor("#f5b14c") + ", crosshair"
+# ── HUD cursor: amber crosshair everywhere (the animated ring rides on top) ──
+# Real PNG files served from the widgets folder: Übersicht's WebKit doesn't draw SVG data-URL cursors reliably
+# (Chrome does), and a bare // inside className CSS would start a comment anyway.
+def _cursor_png(path, color, size):
+    from PIL import Image, ImageDraw
+    k = 8; S = size * k; c = S / 2; img = Image.new("RGBA", (S, S)); d = ImageDraw.Draw(img); lw = round(1.6 * S / 28)
+    r = 5.5 * S / 28; d.ellipse([c - r, c - r, c + r, c + r], outline=color, width=lw)
+    for a, b in ((1, 7), (21, 27)):
+        a, b = a * S / 28, b * S / 28
+        d.line([c, a, c, b], fill=color, width=lw); d.line([a, c, b, c], fill=color, width=lw)
+    r = 1.6 * S / 28; d.ellipse([c - r, c - r, c + r, c + r], fill=color)
+    img.resize((size, size), Image.LANCZOS).save(path)
+_cursor_png(os.path.join(W, "hud-cursor.png"), "#f5b14c", 28)
+_cursor_png(os.path.join(W, "hud-cursor@2x.png"), "#f5b14c", 56)
+CURSOR = '-webkit-image-set(url("hud-cursor.png") 1x, url("hud-cursor@2x.png") 2x) 14 14, crosshair'
 
 NET = {"weather", "markets", "ai-wire", "movers", "mail", "connections"}  # panels that need the internet
 
