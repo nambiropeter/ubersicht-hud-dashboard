@@ -489,6 +489,13 @@ export const className = `
   .body { display:flex; align-items:center; padding:4px 10px 0 6px }
   .flow { stroke-dasharray: 3 5; animation: f 1.2s linear infinite } @keyframes f { to { stroke-dashoffset: -16 } }
   .pulse { animation: p 2.4s ease-in-out infinite } @keyframes p { 50% { opacity:.45 } }
+  .wave { transform-box: fill-box; transform-origin: center; animation: wave 2.6s ease-out infinite }
+  .wave.b { animation-delay: 1.3s } .hub.alert .wave { animation-duration: 1.1s } .hub.alert .wave.b { animation-delay: .55s }
+  @keyframes wave { from { transform: scale(1); opacity: .7 } to { transform: scale(2.1); opacity: 0 } }
+  .hub.alert .ring { animation: beat 1.1s ease-in-out infinite } @keyframes beat { 50% { stroke-width: 2.4 } }
+  .weak { animation: f .5s linear infinite, flick .35s steps(2) infinite } @keyframes flick { 50% { stroke-opacity: .25 } }
+  .spark { animation: spark var(--t) ease-out infinite; animation-delay: var(--d) }
+  @keyframes spark { 0% { transform: translate(0, 0); opacity: 1 } 70% { opacity: .8 } 100% { transform: translate(var(--dx), var(--dy)); opacity: 0 } }
   .rates { margin-left:auto; text-align:right; padding-right:8px }
   .rate { font: 200 25px -apple-system, sans-serif; line-height:1.15 } .rate small { font-size:10px; color:#8c8178; margin-left:3px }
   .rl { font-size:9.5px; letter-spacing:.16em; color:#8c8178; font-weight:600; margin-top:8px }
@@ -511,7 +518,7 @@ export const className = `
   .go { margin-left:6px; padding:1px 6px; border-radius:5px; background:rgba(255,255,255,.06); color:#e6dcd2; cursor:pointer }
   .go:hover { background:rgba(255,255,255,.12) } .go.busy { color:#ffb35c; cursor:default }
 `;
-// ring around CORE (order set in network.sh); side nodes put their labels below, anchored inward so they stay
+// ring around the HUB (order set in network.sh); side nodes put their labels below, anchored inward so they stay
 // inside the svg; the last two sit top/bottom centre, so they get the short names
 const NODES = [[36, 24], [164, 24], [14, 70], [186, 70], [36, 116], [164, 116], [100, 26], [100, 114]];
 const savedView = () => { try { return localStorage.getItem("conn-view") || "LIVE"; } catch (e) { return "LIVE"; } };
@@ -519,6 +526,15 @@ export const initialState = { output: "", view: savedView() };
 export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: ev.view }
   : ev.type === "SPEED" ? { ...prev, speed: ev.speed, testing: ev.testing } : { ...prev, output: ev.output, error: ev.error };
 const problem = n => (window.__offline = n.ip === "offline" || n.services.every(x => !x.ms)) ? "No internet" : null;
+const weak = ms => !ms || ms >= 150;   // amber, red or down: the link flickers and throws sparks
+// a few sparks per weak link, spraying out from the node and from the middle of the line; fixed angles so they don't jump on refresh
+const sparks = (x, y, c, k) => [0, 1, 2, 3, 4, 5, 6, 7, 8].map(j => {
+  const mid = j > 5, px = mid ? (x + 100) / 2 : x, py = mid ? (y + 70) / 2 : y;
+  const a = (j * 2.4 + k * 1.3), r = 12 + ((j * 7 + k * 3) % 12);
+  return <circle key={"s" + k + "-" + j} className="spark" cx={px} cy={py} r={j % 2 ? 1.3 : 1.9} fill={j % 3 ? c : "#fff3d6"}
+    style={{ "--dx": (Math.cos(a) * r).toFixed(1) + "px", "--dy": (Math.sin(a) * r).toFixed(1) + "px",
+             "--t": (0.7 + (j % 3) * 0.25) + "s", "--d": (j * 0.17 + k * 0.11).toFixed(2) + "s",
+             filter: `drop-shadow(0 0 2px ${c})` }} />; });
 const col = ms => !ms ? "#6f665f" : ms < 150 ? "#4ade80" : ms < 450 ? "#ffb35c" : "#f87171";
 const rate = b => b > 1048576 ? [(b / 1048576).toFixed(1), "MB/s"] : [(b / 1024).toFixed(0), "KB/s"];
 const mbps = b => b >= 1e8 ? Math.round(b / 1e6) : (b / 1e6).toFixed(b >= 1e7 ? 0 : 1);
@@ -529,13 +545,20 @@ const sigCol = n => n >= 3 ? "#4ade80" : n === 2 ? "#ffb35c" : "#f87171";
 
 const Live = ({ n }) => {
   const svcs = n ? n.services : [];
+  // the hub breathes amber; any weak link speeds it up, and it turns red if a service is down
+  const alert = svcs.some(s => weak(s.ms)), hub = svcs.some(s => !s.ms) ? "#f87171" : "#ffb35c";
   const [dv, du] = n ? rate(n.down) : ["—", ""], [uv, uu] = n ? rate(n.up) : ["—", ""];
   return (
     <div className="body">
       <svg width="200" height="140" viewBox="0 0 200 140">
-        {svcs.slice(0, NODES.length).map((s, i) => <line key={"l" + i} className="flow" x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={col(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
-        <circle cx="100" cy="70" r="16" fill="rgba(36,27,22,1)" stroke="#ffb35c" strokeWidth="1.3" />
-        <text x="100" y="73.5" textAnchor="middle" fontSize="7" fontWeight="700" fill="#ffb35c" letterSpacing=".5" fontFamily="Orbitron">CORE</text>
+        {svcs.slice(0, NODES.length).map((s, i) => <line key={"l" + i} className={weak(s.ms) ? "flow weak" : "flow"} x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={col(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
+        {svcs.slice(0, NODES.length).map((s, i) => weak(s.ms) ? sparks(NODES[i][0], NODES[i][1], col(s.ms), i) : null)}
+        <g className={"hub" + (alert ? " alert" : "")}>
+          <circle className="wave" cx="100" cy="70" r="16" fill="none" stroke={hub} strokeWidth="1" />
+          <circle className="wave b" cx="100" cy="70" r="16" fill="none" stroke={hub} strokeWidth="1" />
+          <circle className="ring" cx="100" cy="70" r="16" fill="rgba(36,27,22,1)" stroke={hub} strokeWidth="1.3" />
+          <text x="100" y="73.5" textAnchor="middle" fontSize="7.5" fontWeight="700" fill={hub} letterSpacing=".8" fontFamily="Orbitron">HUB</text>
+        </g>
         {svcs.map((s, i) => { const [x, y] = NODES[i], side = y === 70 ? (x < 100 ? -1 : 1) : 0; return (
           <g key={s.name}>
             <circle className="pulse" cx={x} cy={y} r="4.5" fill={col(s.ms)} style={{ filter: `drop-shadow(0 0 4px ${col(s.ms)})` }} />
