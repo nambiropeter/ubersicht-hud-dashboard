@@ -493,7 +493,14 @@ export const className = `
   .wave.b { animation-delay: 1.3s } .hub.alert .wave { animation-duration: 1.1s } .hub.alert .wave.b { animation-delay: .55s }
   @keyframes wave { from { transform: scale(1); opacity: .7 } to { transform: scale(2.1); opacity: 0 } }
   .hub.alert .ring { animation: beat 1.1s ease-in-out infinite } @keyframes beat { 50% { stroke-width: 2.4 } }
-  .hub.ok .ring { animation: glow 2.6s ease-in-out infinite } @keyframes glow { 50% { filter: drop-shadow(0 0 5px #4ade80) } }
+  .flame { transform-box: fill-box; transform-origin: 50% 100%; animation: burn var(--t) ease-in-out infinite alternate; animation-delay: var(--d) }
+  @keyframes burn { 0% { transform: scale(.75, .7) skewX(-6deg); opacity: .75 } 50% { transform: scale(1.05, 1.15) skewX(5deg); opacity: 1 } 100% { transform: scale(.9, .9) skewX(-3deg); opacity: .85 } }
+  .ember { animation: ember var(--t) ease-out infinite; animation-delay: var(--d) }
+  @keyframes ember { 0% { transform: translate(0, 0); opacity: 0 } 15% { opacity: 1 } 100% { transform: translate(var(--dx), -26px); opacity: 0 } }
+  .smoke { transform-box: fill-box; transform-origin: center; animation: smoke var(--t) ease-out infinite; animation-delay: var(--d) }
+  @keyframes smoke { 0% { transform: translate(0, 0) scale(.4); opacity: 0 } 25% { opacity: .35 } 100% { transform: translate(var(--dx), -30px) scale(1.8); opacity: 0 } }
+  .char { animation: char .18s steps(2) infinite } @keyframes char { 50% { opacity: .55 } }
+  .hub.ok .ring { animation: glow 2.6s ease-in-out infinite } @keyframes glow { 50% { filter: drop-shadow(0 0 5px var(--hub)) } }
   .weak { animation: f .5s linear infinite, flick .35s steps(2) infinite } @keyframes flick { 50% { stroke-opacity: .25 } }
   .spark { animation: spark var(--t) ease-out infinite; animation-delay: var(--d) }
   @keyframes spark { 0% { transform: translate(0, 0); opacity: 1 } 70% { opacity: .8 } 100% { transform: translate(var(--dx), var(--dy)); opacity: 0 } }
@@ -536,6 +543,18 @@ const sparks = (x, y, c, k) => [0, 1, 2, 3, 4, 5, 6, 7, 8].map(j => {
     style={{ "--dx": (Math.cos(a) * r).toFixed(1) + "px", "--dy": (Math.sin(a) * r).toFixed(1) + "px",
              "--t": (0.7 + (j % 3) * 0.25) + "s", "--d": (j * 0.17 + k * 0.11).toFixed(2) + "s",
              filter: `drop-shadow(0 0 2px ${c})` }} />; });
+// a burning service: smoke, three flickering flame tongues and embers drifting up; fixed offsets so refreshes don't jump
+const fire = (x, y, k) => <g key={"f" + k} transform={`translate(${x} ${y})`}>
+  {[0, 1, 2].map(j => <circle key={"sm" + j} className="smoke" cx={(j - 1) * 2} cy="-6" r="4" fill="#4a4040"
+    style={{ "--dx": ((j - 1) * 4 + (k % 3) - 1) + "px", "--t": (2.2 + j * 0.4) + "s", "--d": (j * 0.7 + k * 0.23).toFixed(2) + "s", filter: "blur(1.5px)" }} />)}
+  {[[-3, 9, .8], [3, 10, .7], [0, 14, 1]].map(([dx, h, w], j) => <path key={"fl" + j} className="flame"
+    d={`M${dx - 3.5 * w},1 C${dx - 4.5 * w},${-h * .45} ${dx - 1},${-h * .7} ${dx},${-h} C${dx + 1},${-h * .7} ${dx + 4.5 * w},${-h * .45} ${dx + 3.5 * w},1 Z`}
+    fill="url(#flame)" style={{ "--t": (0.28 + j * 0.09 + (k % 3) * 0.04).toFixed(2) + "s", "--d": (j * 0.13 + k * 0.07).toFixed(2) + "s",
+    filter: "drop-shadow(0 0 3px #ff6a2a)" }} />)}
+  {[0, 1, 2, 3, 4].map(j => <circle key={"em" + j} className="ember" cx={((j * 5 + k * 3) % 9) - 4} cy="-4" r={j % 2 ? .9 : 1.3} fill={j % 2 ? "#ffd27a" : "#ff7a3a"}
+    style={{ "--dx": (((j * 7 + k) % 11) - 5) + "px", "--t": (1 + (j % 3) * 0.35) + "s", "--d": (j * 0.27 + k * 0.19).toFixed(2) + "s",
+    filter: "drop-shadow(0 0 2px #ff8a3a)" }} />)}
+</g>;
 const col = ms => !ms ? "#6f665f" : ms < 150 ? "#4ade80" : ms < 450 ? "#ffb35c" : "#f87171";
 const rate = b => b > 1048576 ? [(b / 1048576).toFixed(1), "MB/s"] : [(b / 1024).toFixed(0), "KB/s"];
 const mbps = b => b >= 1e8 ? Math.round(b / 1e6) : (b / 1e6).toFixed(b >= 1e7 ? 0 : 1);
@@ -546,19 +565,22 @@ const sigCol = n => n >= 3 ? "#4ade80" : n === 2 ? "#ffb35c" : "#f87171";
 
 const Live = ({ n }) => {
   const svcs = n ? n.services : [];
-  // the hub pulses green when every link is fast (one service down is tolerated); a weak link turns it amber and
-  // speeds it up, two or more down turn it red, and if everything is down the whole panel goes red and sparks
+  // the hub pulses green when every link is fast, grey when exactly one service is down; a weak link turns it amber
+  // and speeds it up, two or more down turn it red, any down service burns, and if everything is down the whole panel goes red
   const down = svcs.filter(s => !s.ms).length, dead = svcs.length > 0 && (down === svcs.length || n.ip === "offline");
   const alert = svcs.some(s => s.ms && weak(s.ms)) || down > 1, ok = svcs.length > 0 && !alert && down <= 1;
-  const hub = dead || down > 1 ? "#f87171" : ok ? "#4ade80" : "#ffb35c", c = ms => dead ? "#f87171" : col(ms);
+  const hub = dead || down > 1 ? "#f87171" : ok ? (down ? "#a39a92" : "#4ade80") : "#ffb35c", c = ms => dead ? "#f87171" : col(ms);
   const [dv, du] = n ? rate(n.down) : ["—", ""], [uv, uu] = n ? rate(n.up) : ["—", ""];
   return (
     <div className="body">
-      <svg width="200" height="140" viewBox="0 0 200 140">
-        {svcs.slice(0, NODES.length).map((s, i) => <line key={"l" + i} className={weak(s.ms) ? "flow weak" : "flow"} x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={c(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
+      <svg width="200" height="140" viewBox="0 0 200 140" style={{ overflow: "visible" }}>
+        <defs><linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
+          <stop offset="0" stopColor="#fff1b0" /><stop offset=".35" stopColor="#ffb340" /><stop offset=".7" stopColor="#ff5a24" /><stop offset="1" stopColor="#d9261c" stopOpacity="0" />
+        </linearGradient></defs>
+        {svcs.slice(0, NODES.length).map((s, i) => !s.ms ? null : <line key={"l" + i} className={weak(s.ms) ? "flow weak" : "flow"} x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={c(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
         {svcs.slice(0, NODES.length).map((s, i) => weak(s.ms) ? sparks(NODES[i][0], NODES[i][1], c(s.ms), i) : null)}
         {dead && [8, 9, 10].map(k => sparks(100, 70, "#f87171", k))}
-        <g className={"hub" + (alert || dead ? " alert" : ok ? " ok" : "")}>
+        <g className={"hub" + (alert || dead ? " alert" : ok ? " ok" : "")} style={{ "--hub": hub }}>
           <circle className="wave" cx="100" cy="70" r="16" fill="none" stroke={hub} strokeWidth="1" />
           <circle className="wave b" cx="100" cy="70" r="16" fill="none" stroke={hub} strokeWidth="1" />
           <circle className="ring" cx="100" cy="70" r="16" fill="rgba(36,27,22,1)" stroke={hub} strokeWidth="1.3" />
@@ -566,7 +588,9 @@ const Live = ({ n }) => {
         </g>
         {svcs.map((s, i) => { const [x, y] = NODES[i], side = y === 70 ? (x < 100 ? -1 : 1) : 0; return (
           <g key={s.name}>
-            <circle className="pulse" cx={x} cy={y} r="4.5" fill={c(s.ms)} style={{ filter: `drop-shadow(0 0 4px ${c(s.ms)})` }} />
+            <circle className={s.ms ? "pulse" : "char"} cx={x} cy={y} r="4.5" fill={s.ms ? c(s.ms) : "#2a1512"} stroke={s.ms ? "none" : "#ff5a24"} strokeWidth="1.2"
+              style={{ filter: `drop-shadow(0 0 4px ${s.ms ? c(s.ms) : "#ff5a24"})` }} />
+            {!s.ms && fire(x, y, i)}
             <text x={side ? x + side * 10 : x} y={y > 70 || side ? y + 16 : y - 9} textAnchor={side < 0 ? "start" : side > 0 ? "end" : "middle"} fontSize="9" fill={dead ? "#f87171" : "#d9cfc6"}>{s.name} <tspan fill={c(s.ms)}>{s.ms ? s.ms + "ms" : "down"}</tspan></text>
           </g>); })}
       </svg>
