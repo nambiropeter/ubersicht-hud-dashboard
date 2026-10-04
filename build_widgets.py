@@ -438,28 +438,31 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── SYSTEM ─────────────────────────
-widget("system", r'''// System monitor: CPU, memory, disk, battery.
+widget("system", r'''// System monitor: CPU, memory, disk, battery + a fan whose speed follows the combined load.
 export const command = "~/.stark/system.sh";
 export const refreshFrequency = 10 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  .rings { display:grid; grid-template-columns: repeat(4, 1fr); padding:16px 12px 8px; text-align:center }
-  .ring { position:relative; width:64px; height:64px; margin:0 auto }
-  .ring b { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:14px; font-weight:500 }
-  .ring b small { font-size:9px; color:#8c8178; margin-left:1px }
-  .rl { margin-top:7px }
+  .rings { display:grid; grid-template-columns: repeat(5, 1fr); padding:16px 8px 8px; text-align:center }
+  .ring { position:relative; width:56px; height:56px; margin:0 auto }
+  .ring b { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:500 }
+  .ring b small { font-size:8.5px; color:#8c8178; margin-left:1px }
+  .rl { margin-top:7px; letter-spacing:.18em }
+  .fan .rot { position:absolute; inset:0; will-change: transform }
+  .fan .blur { position:absolute; inset:5px; border-radius:50%; transition: opacity 1.5s }
+  .fan b { font-size:10px; font-weight:700; color:#1a1512 }
   .foot { display:flex; justify-content:space-between; margin:6px 16px 0; padding-top:10px; border-top:1px solid rgba(255,214,170,.08); font-size:10.5px; color:#a39a92 }
   .foot b { color:#e6dcd2; font-weight:500 }
 `;
 const Ring = ({ v, col, label }) => {
-  const r = 27, C = 2 * Math.PI * r, f = Math.max(0, Math.min(100, v)) / 100;
+  const r = 23, C = 2 * Math.PI * r, f = Math.max(0, Math.min(100, v)) / 100;
   return (
     <div>
       <div className="ring">
-        <svg width="64" height="64" viewBox="0 0 64 64">
-          <circle cx="32" cy="32" r={r} fill="none" stroke="rgba(255,214,170,.08)" strokeWidth="5" />
-          <circle cx="32" cy="32" r={r} fill="none" stroke={col} strokeWidth="5" strokeLinecap="round"
-            strokeDasharray={`${C * f} ${C}`} transform="rotate(-90 32 32)" style={{ filter: `drop-shadow(0 0 4px ${col})` }} />
+        <svg width="56" height="56" viewBox="0 0 56 56">
+          <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,214,170,.08)" strokeWidth="4.5" />
+          <circle cx="28" cy="28" r={r} fill="none" stroke={col} strokeWidth="4.5" strokeLinecap="round"
+            strokeDasharray={`${C * f} ${C}`} transform="rotate(-90 28 28)" style={{ filter: `drop-shadow(0 0 4px ${col})` }} />
         </svg>
         <b className="num">{Math.round(v)}<small>%</small></b>
       </div>
@@ -468,16 +471,67 @@ const Ring = ({ v, col, label }) => {
   );
 };
 const heat = v => v > 85 ? "#f87171" : v > 65 ? "#ffb35c" : null;
-export const render = ({ output }) => {
-  let s = null; try { s = JSON.parse(output); } catch (e) {}
+// Combined load: CPU counts most, then memory, battery drain (a charging Mac counts a little) and disk.
+const loadOf = s => Math.round(Math.max(0, Math.min(100,
+  .45 * s.cpu + .25 * s.mem + .2 * (s.charging ? 25 : 100 - s.batt) + .1 * s.disk)));
+// Revolutions per second: lazy 0.25 at idle, a blur at 3.5 flat out (exponential, so every step is visible).
+const rps = load => 0.25 * Math.pow(14, load / 100);
+// The rotor keeps spinning across refreshes; a new target speed ramps in over ~1.5 s instead of jumping.
+const spin = load => el => {
+  if (!el) return;
+  if (!el.__spin || el.__spin.playState === "idle") {
+    el.getAnimations().forEach(a => a.cancel());
+    el.__spin = el.animate([{ transform: "rotate(0deg)" }, { transform: "rotate(360deg)" }], { duration: 1000, iterations: Infinity });
+    el.__spin.playbackRate = rps(load);
+  }
+  const anim = el.__spin, from = anim.playbackRate, to = rps(load), t0 = performance.now();
+  clearInterval(el.__ramp);
+  el.__ramp = setInterval(() => {
+    const k = Math.min(1, (performance.now() - t0) / 1500), e = 1 - Math.pow(1 - k, 3);
+    anim.playbackRate = from + (to - from) * e;
+    if (k >= 1) clearInterval(el.__ramp);
+  }, 50);
+};
+const Fan = ({ load }) => {
+  const col = load > 85 ? "#f87171" : load > 65 ? "#ffb35c" : "#ebe5dd";
+  const blade = "M30.3 19.3 Q34 13.2 46.4 15.1 C31.7 7.3 24.1 13.5 24.9 19.5 Z";  // swept blade: hub root to a tip trailing 55° round
   return (
     <div>
-      <header><span style={{ color: "#ffb35c" }}>⌁</span><h1>SYSTEM</h1><span className="sub">MACBOOK · <b>{s ? "NOMINAL" : "…"}</b></span></header>
+      <div className="ring fan">
+        <svg width="56" height="56" viewBox="0 0 56 56" style={{ position: "absolute", inset: 0 }}>
+          <circle cx="28" cy="28" r="25.5" fill="rgba(255,214,170,.035)" stroke="rgba(255,214,170,.14)" strokeWidth="1.5" />
+          <circle cx="28" cy="28" r="23" fill="none" stroke={col} strokeOpacity=".35" strokeWidth=".8" strokeDasharray="1.5 3.2" />
+        </svg>
+        <div className="blur" style={{ opacity: Math.max(0, (load - 35) / 90),
+          background: `radial-gradient(circle, transparent 30%, ${col}22 55%, ${col}10 75%, transparent 78%)` }} />
+        <div className="rot" ref={spin(load)}>
+          <svg width="56" height="56" viewBox="0 0 56 56">
+            {[0, 1, 2, 3, 4, 5].map(i => <path key={i} d={blade} transform={`rotate(${i * 60} 28 28)`}
+              fill={col} fillOpacity=".8" stroke={col} strokeWidth=".6" strokeLinejoin="round" />)}
+          </svg>
+        </div>
+        <svg width="56" height="56" viewBox="0 0 56 56" style={{ position: "absolute", inset: 0 }}>
+          <circle cx="28" cy="28" r="10" fill={col} stroke="#1a1512" strokeOpacity=".5" strokeWidth="2" />
+        </svg>
+        <b className="num">{load}</b>
+      </div>
+      <div className="lbl rl">FAN</div>
+    </div>
+  );
+};
+export const render = ({ output }) => {
+  let s = null; try { s = JSON.parse(output); } catch (e) {}
+  const load = s ? loadOf(s) : 0;
+  return (
+    <div>
+      <header><span style={{ color: "#ffb35c" }}>⌁</span><h1>SYSTEM</h1>
+        <span className="sub">MACBOOK · <b>{!s ? "…" : load > 85 ? "HOT" : load > 65 ? "WORKING HARD" : load > 40 ? "BUSY" : "NOMINAL"}</b></span></header>
       {s && <div className="rings">
         <Ring v={s.cpu} col={heat(s.cpu) || "#7fdcff"} label="CPU" />
         <Ring v={s.mem} col={heat(s.mem) || "#a78bfa"} label="MEMORY" />
         <Ring v={s.disk} col={heat(s.disk) || "#ffb35c"} label="DISK" />
         <Ring v={s.batt} col={s.batt < 20 ? "#f87171" : "#4ade80"} label={s.charging ? "⚡ POWER" : "BATTERY"} />
+        <Fan load={load} />
       </div>}
       {s && <div className="foot num"><span>Uptime <b>{s.uptime}</b></span><span>Processes <b>{s.procs}</b></span><span>Free <b>{s.diskFree}</b></span></div>}
     </div>
@@ -741,12 +795,15 @@ const nyOpen = () => {
 };
 const cap = c => !c ? "" : c >= 1e12 ? `$${(c / 1e12).toFixed(2)}T` : `$${Math.round(c / 1e9)}B`;
 const yahoo = s => run(`open "https://finance.yahoo.com/quote/${encodeURIComponent(s)}"`);
-// Hover a tile to put its 5-day chart on the big stage; leaving the panel brings NASDAQ back.
+// Hover a tile to put its 5-day chart on the big stage; leaving the panel (or 8 s idle) brings NASDAQ back.
 const pick = (root, sym) => {
   if (!root) return;
   root.querySelectorAll(".hero").forEach(h => h.classList.toggle("on", h.dataset.sym === sym));
   root.querySelectorAll(".tile").forEach(t => t.classList.toggle("sel", t.dataset.sym === sym));
 };
+// Leaving into a gap between panels sends no mouseleave (Übersicht passes those clicks through to the desktop),
+// so the stage also falls back to NASDAQ 8 s after the mouse last moved over the panel.
+const home = e => { const el = e.currentTarget; clearTimeout(window.__mkHome); window.__mkHome = setTimeout(() => pick(el, "^IXIC"), 8000); };
 const HeroView = ({ x, label, on }) => (
   <div className={"hero" + (on ? " on" : "")} data-sym={x.sym} onClick={() => yahoo(x.sym)}>
     <div className="hname">{label}</div>
@@ -772,7 +829,7 @@ export const render = ({ output }) => {
         <span className="sub">RANKED BY MARKET CAP</span>
         <span className="pill" style={{ color: open ? "#4ade80" : "#ffb35c", background: open ? "rgba(74,222,128,.1)" : "rgba(255,179,92,.1)" }}>
           ● NYSE {open ? "OPEN" : "CLOSED"}</span></header>
-      {!hero ? <div className="hero on muted">Connecting to markets…</div> : <div onMouseLeave={e => pick(e.currentTarget, "^IXIC")}>
+      {!hero ? <div className="hero on muted">Connecting to markets…</div> : <div onMouseLeave={e => pick(e.currentTarget, "^IXIC")} onMouseMove={home}>
         <div className="stage">
           <HeroView x={hero} label="NASDAQ COMPOSITE · 5 DAYS" on />
           {top.map((x, i) => <HeroView key={x.sym} x={x}
