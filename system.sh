@@ -8,7 +8,13 @@ mem=$(sysctl -n hw.memsize hw.pagesize vm.page_pageable_internal_count vm.page_p
     -v c="$(vm_stat | awk '/occupied by compressor/{gsub("\\.","",$5); print $5}')" \
     '{printf "%.0f", ($3-$4+w+c)*$2/$1*100}')
 # Disk as Finder/System Settings shows it: available includes purgeable space, decimal GB.
-read avail total <<<"$(osascript -l JavaScript -e 'ObjC.import("Foundation"); var k="NSURLVolumeAvailableCapacityForImportantUsageKey", t="NSURLVolumeTotalCapacityKey"; var r=$.NSURL.fileURLWithPath("/").resourceValuesForKeysError($([k,t]),null); r.objectForKey(k).js+" "+r.objectForKey(t).js')"
+# osascript's JavaScript bridge is heavy, so it runs at most every 5 minutes; the answer is cached in .disk.
+cache=~/.stark/.disk
+if [[ ! -s $cache || -n $(find $cache -mmin +5) ]]; then
+  osascript -l JavaScript -e 'ObjC.import("Foundation"); var k="NSURLVolumeAvailableCapacityForImportantUsageKey", t="NSURLVolumeTotalCapacityKey"; var r=$.NSURL.fileURLWithPath("/").resourceValuesForKeysError($([k,t]),null); r.objectForKey(k).js+" "+r.objectForKey(t).js' > $cache.tmp 2>/dev/null &&
+    [[ -s $cache.tmp ]] && mv $cache.tmp $cache
+fi
+read avail total < $cache
 disk=$(awk -v a="$avail" -v t="$total" 'BEGIN{printf "%.0f", (t-a)/t*100}')
 diskfree=$(awk -v a="$avail" 'BEGIN{printf "%.0f GB", a/1e9}')
 batt=$(pmset -g batt | grep -o '[0-9]*%' | head -1 | tr -d '%')
