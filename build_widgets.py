@@ -1188,6 +1188,9 @@ const installCursor = () => {
 // sometimes spins a web at a corner, drops on a thread to the panel below, and lets itself down off the bottom.
 // Webs hang in the gutters for 20 minutes (fading out over the last one) and survive reloads.
 // Click a spider to kick it: it tumbles off the screen and comes back about 30 s later. window.__spiderNow() sends one in right away.
+// With no internet they panic: red eyes, twitching legs, shaking bodies, darting in jerky bursts (even backpedalling), no web
+// rests, every idle spider comes running in, and they leave big round webs wherever they go until the panels are smothered.
+// The moment the internet is back, all of those panic webs fall away and the panels are clear again.
 const SPIDER_CSS = `
   #hud-spider { position:fixed; left:0; top:0; width:100%; height:100%; z-index:99985; pointer-events:none; overflow:visible }
   #hud-spider .silk { fill:none; stroke:rgba(255,255,255,.4); stroke-width:.7 }
@@ -1195,6 +1198,9 @@ const SPIDER_CSS = `
   #hud-spider .web .r { stroke:rgba(255,255,255,.42); stroke-width:.65 }
   #hud-spider .web.new path { stroke-dasharray:1; stroke-dashoffset:1; animation: spweb 4.5s linear forwards }
   #hud-spider .web.new .s { animation-delay: 1.4s }
+  #hud-spider .web.quick path { stroke:rgba(255,255,255,.5); stroke-width:.8 } #hud-spider .web.quick .r { stroke:rgba(255,255,255,.58) }
+  #hud-spider .web.new.quick path { animation-duration: 1.3s } #hud-spider .web.new.quick .s { animation-delay: .4s }
+  #hud-spider .web.gone { transition: opacity .9s, transform .9s ease-in; opacity:0 !important }
   @keyframes spweb { to { stroke-dashoffset:0 } }
   #hud-spider .sp { position:absolute; left:-14px; top:-14px; width:28px; height:28px; pointer-events:auto; cursor:none; display:none;
                     filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.65)) drop-shadow(0 0 2px rgba(242,237,230,.22)) }
@@ -1209,6 +1215,10 @@ const SPIDER_CSS = `
   @keyframes spb { from { transform: rotate(9deg) } to { transform: rotate(-9deg) } }
   @keyframes spcurl { to { transform: scale(.82) } }
   #hud-spider .eye { fill:#f5b14c }
+  #hud-spider.panic .eye { fill:#ff3b2f }
+  #hud-spider.panic .sp .a { animation: spa .07s linear infinite alternate }
+  #hud-spider.panic .sp .b { animation: spb .07s linear infinite alternate }
+  #hud-spider.panic .hangs .lg { animation: spcurl .22s ease-in-out infinite alternate }
 `;
 // Top-down spider facing up; legs in two alternating sets (a/b), each pivoting where it meets the body.
 const SPIDER_LEGS = [[-1.8, -3, -5, -7, -6, -11.5], [-2, -1.8, -6.5, -3.5, -11, -6], [-2, -.6, -6.5, 1, -11, 4], [-1.8, .6, -5, 4.5, -7.5, 10]];
@@ -1218,7 +1228,7 @@ const SPIDER_SVG = '<svg class="sp" viewBox="-14 -14 28 28">' +
   '<g fill="#4a423b" stroke="rgba(242,237,230,.7)" stroke-width=".5"><ellipse cx="0" cy="4.2" rx="3.6" ry="4.6"/>' +
   '<ellipse cx="0" cy="-2" rx="2.4" ry="2.8"/></g><path d="M0 1.6V6.5M-1.5 3.5L0 4.6L1.5 3.5" stroke="rgba(245,177,76,.75)" stroke-width=".6" fill="none"/>' +
   '<circle class="eye" cx="-.8" cy="-4" r=".55"/><circle class="eye" cx=".8" cy="-4" r=".55"/></svg>';
-const SPIDERS = 10, WEB_LIFE = 20 * 60000, WEB_MAX = 30;
+const SPIDERS = 10, WEB_LIFE = 20 * 60000, WEB_MAX = 30, PANIC_WEBS = 160;
 const installSpider = () => {
   let st = document.getElementById("hud-spider-style");
   if (!st) { st = document.createElement("style"); st.id = "hud-spider-style"; document.head.appendChild(st); }
@@ -1233,22 +1243,24 @@ const installSpider = () => {
   document.body.appendChild(root);
   const websG = root.querySelector(".webs"), silksG = root.querySelector(".silks");
   const rnd = (a, b) => a + Math.random() * (b - a);
+  const offline = () => !!window.__offline || !navigator.onLine;
   const frame = () => new Promise(r => requestAnimationFrame(r));
   const panelEl = name => document.querySelector(`[data-hud="${name}"]`);
   const panels = () => [...document.querySelectorAll("[data-hud]")].map(o => [o, o.getBoundingClientRect()]).filter(([, r]) => r.width > 120);
 
   // ── Webs: corner c (0 TL, 1 TR, 2 BR, 3 BL) of a panel, spun into the gutter outside it; shape from a seed.
   let webs = []; try { webs = JSON.parse(localStorage.getItem("hud-webs") || "[]"); } catch (e) {}
-  const saveWebs = () => { try { localStorage.setItem("hud-webs", JSON.stringify(webs.map(({ p, c, t, seed }) => ({ p, c, t, seed })))); } catch (e) {} };
+  const saveWebs = () => { try { localStorage.setItem("hud-webs", JSON.stringify(webs.map(({ p, c, t, seed, fx, fy, a }) => ({ p, c, t, seed, fx, fy, a })))); } catch (e) {} };
   const seeded = seed => () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-  const webPaths = seed => {   // drawn at the origin, spanning the quadrant between angle 0 and 90° (x right, y down)
-    const r = seeded(seed), R = 30 + r() * 22, n = 6 + Math.floor(r() * 3), angs = [], lens = [];
-    for (let i = 0; i < n; i++) { angs.push((i / (n - 1)) * Math.PI / 2 + (i && i < n - 1 ? (r() - .5) * .18 : 0)); lens.push(R * (.85 + r() * .25)); }
+  const webPaths = (seed, full) => {   // drawn at the origin, spanning the quadrant between angle 0 and 90° (x right, y down), or all round
+    const r = seeded(seed), R = (full ? 45 : 30) + r() * (full ? 45 : 22), n = full ? 12 + Math.floor(r() * 5) : 6 + Math.floor(r() * 3), angs = [], lens = [];
+    for (let i = 0; i < n; i++) { angs.push((i / (n - 1)) * (full ? 2 : .5) * Math.PI + (i && i < n - 1 ? (r() - .5) * .18 : 0)); lens.push(R * (.85 + r() * .25)); }
+    if (full) lens[n - 1] = lens[0];   // the last spoke is the first one, closing the spiral
     const P = (a, l) => [Math.cos(a) * l, Math.sin(a) * l];
     let rad = "", spiral = "";
     angs.forEach((a, i) => { const [x, y] = P(a, lens[i]); rad += `M0 0L${x.toFixed(1)} ${y.toFixed(1)}`; });
-    const rings = 5 + Math.floor(r() * 3);
+    const rings = full ? 9 + Math.floor(r() * 4) : 5 + Math.floor(r() * 3);
     for (let k = 1; k <= rings; k++) { const f = k / (rings + .6);
       angs.forEach((a, i) => { const [x, y] = P(a, lens[i] * f * (.94 + r() * .1));
         if (!i) { spiral += `M${x.toFixed(1)} ${y.toFixed(1)}`; return; }
@@ -1257,19 +1269,33 @@ const installSpider = () => {
     return `<path class="r" pathLength="1" d="${rad}"/><path class="s" pathLength="1" d="${spiral}"/>`;
   };
   const OUT = [180, 270, 0, 90];   // the quadrant facing away from the panel at each corner
-  const placeWeb = w => { const o = panelEl(w.p); if (!o) { w.g.style.display = "none"; return; }
-    const r = o.getBoundingClientRect(), [x, y] = [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]][w.c];
+  const placeWeb = w => { if (w.gone) return; const o = panelEl(w.p); if (!o) { w.g.style.display = "none"; return; }
+    const r = o.getBoundingClientRect(), [x, y] = w.c < 0 ? [r.left + w.fx * r.width, r.top + w.fy * r.height]
+      : [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]][w.c];
     const left = WEB_LIFE - (Date.now() - w.t);
-    w.g.style.display = ""; w.g.setAttribute("transform", `translate(${x} ${y}) rotate(${OUT[w.c]})`);
+    w.g.style.display = ""; w.g.setAttribute("transform", `translate(${x} ${y}) rotate(${w.c < 0 ? w.a : OUT[w.c]})`);
     w.g.style.opacity = Math.max(0, Math.min(1, left / 60000)).toFixed(3); };
-  const drawWeb = (w, fresh) => { w.g = document.createElementNS(NS, "g"); w.g.setAttribute("class", "web" + (fresh ? " new" : ""));
-    w.g.innerHTML = webPaths(w.seed); websG.appendChild(w.g); placeWeb(w); };
-  webs = webs.filter(w => Date.now() - w.t < WEB_LIFE); webs.forEach(w => drawWeb(w, false));
+  const drawWeb = (w, fresh) => { w.g = document.createElementNS(NS, "g"); w.g.setAttribute("class", "web" + (fresh ? " new" : "") + (w.c < 0 ? " quick" : ""));
+    w.g.innerHTML = webPaths(w.seed, w.c < 0); websG.appendChild(w.g); placeWeb(w); };
+  webs = webs.filter(w => Date.now() - w.t < WEB_LIFE && (w.c >= 0 || offline())); webs.forEach(w => drawWeb(w, false));
   const spin = (p, c) => { webs.filter(w => w.p === p && w.c === c).forEach(w => w.g.remove());
     webs = webs.filter(w => !(w.p === p && w.c === c));
-    while (webs.length >= WEB_MAX) webs.shift().g.remove();
+    const corner = webs.filter(w => w.c >= 0); if (corner.length >= WEB_MAX) { corner[0].g.remove(); webs = webs.filter(w => w !== corner[0]); }
     const w = { p, c, t: Date.now(), seed: Math.floor(Math.random() * 1e9) }; webs.push(w); drawWeb(w, true); saveWebs(); };
+  // A panicked web anywhere on (or at the edge of) a panel, stored as a fraction of its size so it rides along with it.
+  const spinAt = (o, x, y) => { const r = o.getBoundingClientRect(), wild = webs.filter(w => w.c < 0);
+    if (wild.length >= PANIC_WEBS) { wild[0].g.remove(); webs = webs.filter(w => w !== wild[0]); }
+    const w = { p: o.dataset.hud, c: -1, fx: (x - r.left) / r.width, fy: (y - r.top) / r.height, a: Math.floor(rnd(0, 360)),
+      t: Date.now(), seed: Math.floor(Math.random() * 1e9) }; webs.push(w); drawWeb(w, true); saveWebs(); };
+  let wasOff = false;
   window.__hudWebTimer = setInterval(() => { if (!alive()) return;
+    const off = offline(); root.classList.toggle("panic", off);
+    if (off && !wasOff) crew.forEach(go => timers.push(setTimeout(() => alive() && offline() && go(), rnd(300, 5000))));   // everyone comes running
+    if (!off && wasOff) {   // back online: the panic webs drop away
+      webs.filter(w => w.c < 0).forEach(w => { w.gone = true; w.g.classList.add("gone");
+        w.g.setAttribute("transform", w.g.getAttribute("transform") + " translate(0 40) scale(.6)"); setTimeout(() => w.g.remove(), 1000); });
+      webs = webs.filter(w => w.c >= 0); saveWebs(); }
+    wasOff = off;
     const old = webs.filter(w => Date.now() - w.t >= WEB_LIFE); if (old.length) { old.forEach(w => w.g.remove()); webs = webs.filter(w => !old.includes(w)); saveWebs(); }
     webs.forEach(placeWeb); }, 300);
 
@@ -1279,11 +1305,19 @@ const installSpider = () => {
     const holder = document.createElement("div"); holder.innerHTML = SPIDER_SVG; const sp = holder.firstChild; root.appendChild(sp);
     const silk = document.createElementNS(NS, "path"); silk.setAttribute("class", "silk"); silksG.appendChild(silk);
     let busy = false, scared = false, x = 0, y = -30, ang = 180, goalAng = 180, thread = null, mode = "", kick = [0, 0];
+    // Offline: speed comes in jerky bursts — mostly 2–4× darts, sometimes a freeze or a quick step backwards.
+    let burst = 1, burstEnd = 0, nextWeb = 0;
+    const litter = o => { const now = performance.now(); if (!offline()) { nextWeb = now + rnd(300, 1500); return; }
+      if (now > nextWeb) { nextWeb = now + rnd(500, 1400); spinAt(o, x, y); } };
+    const fear = () => { if (!offline()) return 1; const now = performance.now();
+      if (now > burstEnd) { const r = Math.random(); burst = r < .12 ? rnd(-1.6, -.6) : r < .25 ? rnd(0, .3) : rnd(2, 4.2); burstEnd = now + rnd(110, 420); }
+      return burst; };
     sp.addEventListener("mousedown", e => { e.stopPropagation(); if (!busy || scared) return; scared = true;
       const dx = x - e.clientX, dy = y - e.clientY, d = Math.hypot(dx, dy) || 1, f = rnd(320, 520);   // knocked away from the click
       kick = [dx / d * f + rnd(-60, 60), Math.min(-180, dy / d * f) - rnd(120, 260)]; });
-    const put = () => { const d = ((goalAng - ang + 540) % 360) - 180; ang += d * .2;
-      sp.style.transform = `translate(${x}px, ${y}px) rotate(${ang}deg) scale(${size})`;
+    const put = () => { const d = ((goalAng - ang + 540) % 360) - 180, p = offline(); ang += d * (p ? .45 : .2);
+      const jx = p ? rnd(-1.4, 1.4) : 0, jy = p ? rnd(-1.4, 1.4) : 0, ja = p ? rnd(-16, 16) : 0;   // trembling
+      sp.style.transform = `translate(${x + jx}px, ${y + jy}px) rotate(${ang + ja}deg) scale(${size})`;
       if (thread) { silk.style.transition = "none"; silk.style.opacity = 1; silk.setAttribute("d", `M${thread[0]} ${thread[1]}L${x} ${y}`); } };
     const legs = m => { mode = m; sp.setAttribute("class", "sp on " + m); };
     const stop = () => { if (!alive()) throw "gone"; };
@@ -1294,8 +1328,8 @@ const installSpider = () => {
     const walk = async (o, s, to, speed) => {
       const r0 = o.getBoundingClientRect(), P = 2 * (r0.width + r0.height); let d = ((to - s) % P + P) % P; if (d > P / 2) d -= P;
       const dir = Math.sign(d); legs("walk"); let t = performance.now();
-      while (Math.abs(d) > .5 && !scared) { stop(); await frame(); const now = performance.now(), v = Math.min(Math.abs(d), (speed || 38) * pace * (now - t) / 1000); t = now;
-        s += dir * v; d -= dir * v; const [nx, ny, a] = edge(o.getBoundingClientRect(), s); x = nx; y = ny; goalAng = dir > 0 ? a : a + 180; put(); }
+      while (Math.abs(d) > .5 && !scared) { stop(); await frame(); const now = performance.now(), f = fear(), v = Math.min(Math.abs(d), (speed || 38) * pace * Math.abs(f) * (now - t) / 1000) * Math.sign(f); t = now;
+        s += dir * v; d -= dir * v; const [nx, ny, a] = edge(o.getBoundingClientRect(), s); x = nx; y = ny; goalAng = dir > 0 ? a : a + 180; put(); litter(o); }
       legs(""); return s; };
     // Walk straight across the panel's face from border point s to border point to (over its content).
     const cross = async (o, s, to) => {
@@ -1303,15 +1337,15 @@ const installSpider = () => {
       const [ax, ay] = at(s), [bx, by] = at(to), len = Math.hypot(bx - ax, by - ay), stopAt = Math.random() < .6 ? rnd(.3, .7) : 2;
       goalAng = Math.atan2(bx - ax, -(by - ay)) * 180 / Math.PI; legs("walk"); let k = 0, t = performance.now(), paused = 0;
       while (k < 1 && !scared) { stop(); await frame(); const now = performance.now(), r = o.getBoundingClientRect();
-        if (k >= stopAt && !paused) { paused = now + rnd(1500, 4500); legs(""); }   // stop for a look at what's on the panel
+        if (k >= stopAt && !paused && !offline()) { paused = now + rnd(1500, 4500); legs(""); }   // stop for a look at what's on the panel
         if (paused && now < paused) { t = now; } else { if (paused) { paused = -1; legs("walk"); }
-          k = Math.min(1, k + 30 * pace * (now - t) / 1000 / Math.max(1, len)); t = now; }
-        x = r.left + ax + (bx - ax) * k; y = r.top + ay + (by - ay) * k; put(); }
+          k = Math.max(0, Math.min(1, k + 30 * pace * fear() * (now - t) / 1000 / Math.max(1, len))); t = now; }
+        x = r.left + ax + (bx - ax) * k; y = r.top + ay + (by - ay) * k; put(); litter(o); }
       legs(""); return to; };
     const rest = async (o, s, ms) => { const t0 = performance.now();
-      while (performance.now() - t0 < ms && !scared) { stop(); await frame(); [x, y] = edge(o.getBoundingClientRect(), s); put(); } };
+      while (performance.now() - t0 < ms * (offline() ? .2 : 1) && !scared) { stop(); await frame(); [x, y] = edge(o.getBoundingClientRect(), s); put(); } };
     const drop = async (ty, speed) => { thread = [x, y]; goalAng = 180; legs("hangs"); let t = performance.now();
-      while (y < ty && !scared) { stop(); await frame(); const now = performance.now(); y = Math.min(ty, y + (speed || 55) * pace * (now - t) / 1000); t = now;
+      while (y < ty && !scared) { stop(); await frame(); const now = performance.now(); y = Math.min(ty, y + (speed || 55) * pace * Math.max(.4, Math.abs(fear())) * (now - t) / 1000); t = now;
         x += Math.sin(now / 400 + i) * .08; put(); } };
     const tumble = async () => { cutSilk(); legs("hangs fast"); let [vx, vy] = kick, spinv = rnd(500, 900) * (vx < 0 ? -1 : 1), t = performance.now();
       while (y < window.innerHeight + 40 && x > -60 && x < window.innerWidth + 60) { stop(); await frame();
@@ -1330,9 +1364,9 @@ const installSpider = () => {
           for (let n = Math.floor(rnd(1, 4)); n > 0 && !scared; n--) {   // wander the border, pausing to look around
             r = o.getBoundingClientRect(); const w = r.width, h = r.height;
             const roll = Math.random();
-            if (roll < .3) {   // cut across the top of the panel to another edge
+            if (roll < (offline() ? .65 : .3)) {   // cut across the top of the panel to another edge (offline: mostly this, webbing it)
               const P = 2 * (w + h); s = await cross(o, s, s + rnd(.3, .7) * P);
-            } else if (roll < .6) {   // head for a corner and spin a web there
+            } else if (roll < .6 && !offline()) {   // head for a corner and spin a web there 
               const c = Math.floor(rnd(0, 4)); s = await walk(o, s, [0, w, w + h, 2 * w + h][c]); if (scared) break;
               legs("spin"); spin(o.dataset.hud, c); await rest(o, s, 4800); legs("");
             } else { s = await walk(o, s, rnd(0, 2 * (w + h))); }
@@ -1352,8 +1386,9 @@ const installSpider = () => {
       cutSilk(); sp.setAttribute("class", "sp"); busy = false; return scared ? "kicked" : true;
     };
     const plan = ms => timers[i] = setTimeout(async () => { if (!alive()) return; const how = await cameo();
-      if (alive()) plan(how === "kicked" ? rnd(27000, 33000) : rnd(60000, 240000)); }, ms);
-    const go = () => { clearTimeout(timers[i]); const p = cameo(); p.then(how => { if (how && alive()) plan(how === "kicked" ? rnd(27000, 33000) : rnd(60000, 240000)); }); return p; };
+      if (alive()) plan(next(how)); }, ms);
+    const next = how => how === "kicked" ? rnd(27000, 33000) : offline() ? rnd(5000, 20000) : rnd(60000, 240000);
+    const go = () => { clearTimeout(timers[i]); const p = cameo(); p.then(how => { if (how && alive()) plan(next(how)); }); return p; };
     plan(rnd(8000, 20000) + i * rnd(8000, 20000));   // staggered arrivals
     return go;
   };
