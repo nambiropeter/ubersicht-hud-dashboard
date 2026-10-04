@@ -1,6 +1,8 @@
 """Builds the Übersicht desktop dashboard from one shared layout grid.
 Run: python3 ~/.stark/build_widgets.py   (then Übersicht reloads automatically)"""
-import os, re, shutil, urllib.parse
+import os, re, shutil, time, urllib.parse
+
+BUILD = str(int(time.time()))  # Übersicht hot-reloads code onto the same DOM: each build replaces the previous one's handlers
 
 _S = os.path.expanduser("~/.stark")
 if not os.path.exists(f"{_S}/wifi") or os.path.getmtime(f"{_S}/wifi.swift") > os.path.getmtime(f"{_S}/wifi"):
@@ -34,7 +36,6 @@ SHARED = """
   &:hover { border-color: rgba(255,255,255,.13) }
   &.dragging { transform: scale(1.012); box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 34px 80px rgba(0,0,0,.6) }
   &.dragging header { cursor: grabbing }
-  &.snap { border-color: rgba(245,177,76,.55) }
   &::before { content:""; position:absolute; top:0; left:28px; right:28px; height:1px; pointer-events:none;
               background: linear-gradient(90deg, transparent, rgba(245,177,76,.6), transparent) }
   * { box-sizing: border-box }
@@ -227,46 +228,50 @@ THEME = [
     ("#d9b48a", "#e9c48e"), ("#a78bfa", "#b39cff"), ("#c4a1ff", "#b39cff"),
 ]
 
-HUD = """// Drag a panel by its header: it snaps to neighbouring panels, the screen margins and its home slot.
-// Released near home it glides back; double-click the header to send it home. Cursor light for the glass.
+HUD = """// Drag a panel by its header.
+// Its chains stretch as you pull and never break: let go and they spring it back home. Cursor light for the glass.
 const hud = name => el => {
-  if (!el) return; const box = el.parentElement; if (!box || box.__hud) return; box.__hud = true;
-  box.dataset.hud = name;
-  const key = "hud-pos:" + name, anywhere = name === "clock", GAP = 20, MAG = 16, HOME_R = 70;
+  if (!el) return; const box = el.parentElement; if (!box || box.__hud === "%%BUILD%%") return;
+  if (box.__hudOff) box.__hudOff.abort(); const off = new AbortController(), on = { signal: off.signal };
+  box.__hud = "%%BUILD%%"; box.__hudOff = off; box.dataset.hud = name;
+  box.getAnimations().forEach(a => a.cancel()); box.style.left = box.style.top = box.style.transition = ""; box.dataset.tether = "";
+  const anywhere = name === "clock";
   const home = { x: box.offsetLeft, y: box.offsetTop };
-  const EASE = "cubic-bezier(.2,.9,.25,1.15)", BASE = "border-color .3s, box-shadow .3s, transform .3s";
-  const place = (x, y, glide) => {
-    box.style.transition = glide ? `left .45s ${EASE}, top .45s ${EASE}, ${BASE}` : BASE;
-    box.style.left = x + "px"; box.style.top = y + "px"; };
-  try { const p = JSON.parse(localStorage.getItem(key)); if (p) place(p.x, p.y, false); } catch (e) {}
+  const BASE = "border-color .3s, box-shadow .3s, transform .3s";
+  { const r = box.getBoundingClientRect(); box.dataset.hx = r.left; box.dataset.hy = r.top; }  // chains measure strain from here
+  let anim = null, done = 0;
+  const place = (x, y) => { box.style.transition = BASE; box.style.left = x + "px"; box.style.top = y + "px"; };
+  // Under-damped spring, precomputed and played with the Web Animations API: the panel's real position is home
+  // straight away, so even if the animation never gets a frame (Übersicht throttles hidden views) it can't get stuck.
+  const pullHome = () => {
+    const dx = box.offsetLeft - home.x, dy = box.offsetTop - home.y;
+    place(home.x, home.y); if (Math.hypot(dx, dy) < 1) return;
+    let x = dx, y = dy, vx = 0, vy = 0; const frames = [];
+    for (let i = 0; i < 180; i++) { frames.push({ transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)` });
+      if (Math.hypot(x, y) < 0.4 && Math.hypot(vx, vy) < 6) break;
+      vx += (-170 * x - 15 * vx) / 60; vy += (-170 * y - 15 * vy) / 60; x += vx / 60; y += vy / 60; }
+    frames.push({ transform: "translate(0px, 0px)" });
+    const ms = frames.length * 1000 / 60, settle = () => { clearTimeout(done); anim = null; box.dataset.tether = ""; };
+    box.dataset.tether = "taut";
+    anim = box.animate(frames, { duration: ms, easing: "linear" }); anim.onfinish = settle; anim.oncancel = settle;
+    clearTimeout(done); done = setTimeout(settle, ms + 100); };
   box.addEventListener("mousemove", e => { const r = box.getBoundingClientRect();
-    box.style.setProperty("--mx", (e.clientX - r.left) + "px"); box.style.setProperty("--my", (e.clientY - r.top) + "px"); });
-  box.addEventListener("mouseleave", () => box.style.setProperty("--mx", "-999px"));
-  const nearest = (v, cands) => { let best = v, d = MAG; for (const c of cands) { const k = Math.abs(c - v); if (k < d) { d = k; best = c; } } return best; };
+    box.style.setProperty("--mx", (e.clientX - r.left) + "px"); box.style.setProperty("--my", (e.clientY - r.top) + "px"); }, on);
+  box.addEventListener("mouseleave", () => box.style.setProperty("--mx", "-999px"), on);
   box.addEventListener("mousedown", e => {
     if (e.button !== 0 || e.target.closest(".seg, .tabs") || !(anywhere || e.target.closest("header"))) return;
-    e.preventDefault();
+    if (anim) { const r = box.getBoundingClientRect(); anim.cancel(); place(r.left - box.dataset.hx + home.x, r.top - box.dataset.hy + home.y); }
     const sx = e.clientX, sy = e.clientY, ox = box.offsetLeft, oy = box.offsetTop, W = box.offsetWidth, H = box.offsetHeight;
-    const xs = [32, window.innerWidth - W - 32, home.x], ys = [20, window.innerHeight - H - 20, home.y];
-    document.querySelectorAll("[data-hud]").forEach(o => { if (o === box) return;
-      const l = o.offsetLeft, t = o.offsetTop, r = l + o.offsetWidth, b = t + o.offsetHeight;
-      xs.push(l, r - W, r + GAP, l - W - GAP); ys.push(t, b - H, b + GAP, t - H - GAP); });
     window.__hudZ = (window.__hudZ || 10) + 1; box.style.zIndex = window.__hudZ; box.classList.add("dragging");
     const mv = ev => {
-      let x = ox + ev.clientX - sx, y = oy + ev.clientY - sy;
-      const nx = nearest(x, xs), ny = nearest(y, ys);
-      box.classList.toggle("snap", nx !== x || ny !== y);
-      x = Math.max(0, Math.min(window.innerWidth - W, nx)); y = Math.max(0, Math.min(window.innerHeight - 40, ny));
-      place(Math.round(x), Math.round(y), false); };
+      const x = Math.max(0, Math.min(window.innerWidth - W, ox + ev.clientX - sx)), y = Math.max(0, Math.min(window.innerHeight - 40, oy + ev.clientY - sy));
+      place(Math.round(x), Math.round(y)); box.dataset.tether = "taut"; };
     const up = () => {
       document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
-      box.classList.remove("dragging", "snap");
-      if (Math.hypot(box.offsetLeft - home.x, box.offsetTop - home.y) < HOME_R) { place(home.x, home.y, true); localStorage.removeItem(key); }
-      else localStorage.setItem(key, JSON.stringify({ x: box.offsetLeft, y: box.offsetTop })); };
+      box.classList.remove("dragging"); pullHome(); };
     document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
-  });
-  box.addEventListener("dblclick", e => { if (e.target.closest(".seg, .tabs") || !(anywhere || e.target.closest("header"))) return;
-    localStorage.removeItem(key); place(home.x, home.y, true); });
+  }, on);
+
 };"""
 
 # ── Stark armour HUD: amber holograms on smoked-bronze glass (blends with a warm wallpaper) ──
@@ -307,8 +312,10 @@ def widget(name, body):
     body = re.sub(r";?\s*text-shadow:[^;}]*", "", body)
     body = body.replace("cursor: default;", f"cursor: {CURSOR};").replace("cursor:pointer", f"cursor:{CURSOR_HOT}")
     if name != "aa-links":
-        body = re.sub(r"(return \(\s*<div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', body)
-        body = re.sub(r"(return <div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', body)
+        head, mark, tail = body.partition("\nexport const render")
+        tail = re.sub(r"(return \(\s*<div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', tail)
+        tail = re.sub(r"(return <div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', tail)
+        body = head + mark + tail
         body = body.replace("\nexport const render", "\n" + HUD + "\nexport const render", 1)
     if name not in ("aa-links", "clock"):
         # badge goes in every root the render returns (e.g. loading + loaded), not in helper components above it
@@ -318,6 +325,7 @@ def widget(name, body):
         body = head + mark + tail.replace(ref, ref + '<span className="syncwarn" data-sync="' + name + '"' + net + ' data-every={refreshFrequency} />')
         body = body.replace("\nexport const render =", "\n" + SYNC + "\nconst __render =", 1)
         body += '\nexport const render = (p, d) => __render(syncCheck("' + name + '", p), d);'
+    body = body.replace("%%BUILD%%", BUILD)
     with open(os.path.join(W, name + ".jsx"), "w") as f:
         f.write(body + "\n")
 
@@ -328,7 +336,7 @@ export const command = "date +%s";
 export const refreshFrequency = 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  padding: 18px 18px 16px 20px; cursor: grab;
+  padding: 18px 18px 16px 20px;
   .time { display:flex; align-items:baseline; gap:8px }
   .time b { font: 200 60px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.03em; line-height:1; color:#ffffff }
   .time span { font: 300 20px -apple-system, sans-serif; color:#f5b14c }
@@ -927,7 +935,6 @@ v(1180, 308, 328); v(1356, 308, 328)
 v(1180, 616, 636); v(1356, 616, 636)                                    # batcave ↔ ai
 POS["aa-links"] = (0, 0, 0, 0)
 widget("aa-links", '''// Glowing connectors between panels (file name sorts first so it draws behind them).
-// Hidden once any panel has been dragged somewhere else (double-click headers to restore the default layout).
 export const command = "true";
 export const refreshFrequency = 2000;
 const CURSOR_CSS = `
@@ -948,6 +955,10 @@ const CURSOR_CSS = `
   #hud-links .f { fill:none; stroke:#f5b14c; stroke-width:1.4; stroke-dasharray:3 9; animation: hudflow 1.6s linear infinite;
                   filter: drop-shadow(0 0 3px rgba(245,177,76,.9)) }
   #hud-links circle { fill:#f5b14c; filter: drop-shadow(0 0 4px #f5b14c); animation: hudpulse 2.6s ease-in-out infinite }
+  #hud-cables { position:fixed; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:99990; overflow:visible }
+  #hud-cables .l { fill:none; stroke-linecap:round; filter: drop-shadow(0 3px 4px rgba(0,0,0,.75)) }
+  #hud-cables .f { fill:none; stroke:#ffd696; stroke-width:1.8; animation: hudflow .45s linear infinite; filter: drop-shadow(0 0 3px rgba(245,177,76,.9)) }
+  #hud-cables circle { fill:#f5b14c; r:3.4px; filter: drop-shadow(0 0 5px #f5b14c) }
   @keyframes hudflow { to { stroke-dashoffset: -24 } }
   @keyframes hudpulse { 50% { opacity:.35 } }
   .hud-ripple { position:fixed; width:12px; height:12px; margin:-6px 0 0 -6px; border:2px solid #3ee8ff; border-radius:50%;
@@ -959,7 +970,9 @@ const installCursor = () => {
   let st = document.getElementById("hud-style");
   if (!st) { st = document.createElement("style"); st.id = "hud-style"; document.head.appendChild(st); }
   st.textContent = CURSOR_CSS;
-  if (window.__hudCursor) return; window.__hudCursor = true;
+  if (window.__hudCursor === "%%BUILD%%") return; window.__hudCursor = "%%BUILD%%";
+  if (window.__hudCursorOff) window.__hudCursorOff.abort(); const off = new AbortController(), on = { signal: off.signal };
+  window.__hudCursorOff = off; document.querySelectorAll("#hud-ring").forEach(n => n.remove());
   const ring = document.createElement("div"); ring.id = "hud-ring"; ring.innerHTML = "<i></i><b></b>"; document.body.appendChild(ring);
   let x = -200, y = -200, tx = -200, ty = -200, hot = false;
   document.addEventListener("mousemove", e => {
@@ -967,23 +980,26 @@ const installCursor = () => {
     const t = e.target.closest ? e.target.closest(".row,.tile,.it,.hero,header") : null;
     hot = !!t && !t.matches("header");
     ring.classList.toggle("hot", hot); ring.classList.toggle("grab", !!t && t.matches("header"));
-  });
-  document.addEventListener("mouseout", e => { if (!e.relatedTarget) ring.classList.remove("on"); });
+  }, on);
+
+  document.addEventListener("mouseout", e => { if (!e.relatedTarget) ring.classList.remove("on"); }, on);
   document.addEventListener("mousedown", e => {
     ring.classList.add("down");
     const r = document.createElement("div"); r.className = "hud-ripple" + (hot ? " hot" : "");
     r.style.left = e.clientX + "px"; r.style.top = e.clientY + "px"; document.body.appendChild(r); setTimeout(() => r.remove(), 700);
-  });
-  document.addEventListener("mouseup", () => ring.classList.remove("down"));
-  const loop = () => { x += (tx - x) * 0.24; y += (ty - y) * 0.24; ring.style.transform = `translate(${x}px, ${y}px)`; requestAnimationFrame(loop); };
+  }, on);
+
+  document.addEventListener("mouseup", () => ring.classList.remove("down"), on);
+  const loop = () => { x += (tx - x) * 0.24; y += (ty - y) * 0.24; ring.style.transform = `translate(${x}px, ${y}px)`; if (window.__hudCursor === "%%BUILD%%") requestAnimationFrame(loop); };
   loop();
 };
 const PAIRS = [["clock", "weather"], ["weather", "system"], ["system", "connections"], ["markets", "ai-wire"],
   ["batcave", "mail"], ["mail", "movers"], ["clock", "markets"], ["weather", "markets"], ["system", "ai-wire"],
   ["connections", "ai-wire"], ["markets", "batcave"], ["markets", "mail"], ["ai-wire", "movers"]];
-const LAYOUT_VERSION = "2";  // bump to send every panel back to its home slot once
+const LAYOUT_VERSION = "3";  // clears positions saved back when panels could be rearranged
 const installLinks = () => {
-  if (window.__hudLinks) return; window.__hudLinks = true;
+  if (window.__hudLinks === "%%BUILD%%") return; window.__hudLinks = "%%BUILD%%";
+  document.querySelectorAll("#hud-links, #hud-cables").forEach(n => n.remove());
   try { if (localStorage.getItem("hud-layout") !== LAYOUT_VERSION) {
     Object.keys(localStorage).filter(k => k.startsWith("hud-pos:")).forEach(k => localStorage.removeItem(k));
     localStorage.setItem("hud-layout", LAYOUT_VERSION); } } catch (e) {}
@@ -991,6 +1007,7 @@ const installLinks = () => {
   svg.id = "hud-links";
   svg.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:visible";
   document.body.prepend(svg);
+  const top = svg.cloneNode(false); top.id = "hud-cables"; top.style.zIndex = "99990"; document.body.appendChild(top);
   const els = PAIRS.map(() => { const g = document.createElementNS(NS, "g");
     g.innerHTML = '<path class="l"/><path class="f"/><circle r="2.6"/><circle r="2.6"/>'; svg.appendChild(g); return g; });
   let sig = "";
@@ -1007,22 +1024,30 @@ const installLinks = () => {
   };
   const tick = () => {
     const boxes = {}; document.querySelectorAll("[data-hud]").forEach(o => { boxes[o.dataset.hud] = o.getBoundingClientRect(); });
-    const now = Object.entries(boxes).map(([k, r]) => k + (r.left | 0) + "," + (r.top | 0)).join("|");
+    const state = {}; document.querySelectorAll("[data-hud]").forEach(o => {
+      const r = boxes[o.dataset.hud], d = Math.hypot(r.left - o.dataset.hx, r.top - o.dataset.hy);
+      state[o.dataset.hud] = [o.dataset.tether || "", Math.min(1, d / 240)]; });
+    const now = Object.entries(boxes).map(([k, r]) => k + (r.left | 0) + "," + (r.top | 0) + state[k]).join("|");
     if (now !== sig) { sig = now;
       PAIRS.forEach(([p, q], i) => { const g = els[i], a = boxes[p], b = boxes[q];
         if (!a || !b) { g.style.display = "none"; return; }
+        // A panel being pulled keeps its chains however far they stretch.
+        const [tp, sp] = state[p], [tq, sq] = state[q], mode = tp || tq;
         const [x1, y1, x2, y2] = link(a, b), len = Math.hypot(x2 - x1, y2 - y1);
-        if (len > 340 || len < 4) { g.style.display = "none"; return; }
-        g.style.display = "";
-        const straight = Math.abs(x1 - x2) < 1 || Math.abs(y1 - y2) < 1, mx = (x1 + x2) / 2;
+        if (len < 4 || (len > 340 && mode !== "taut")) { g.style.display = "none"; return; }
+        g.style.display = ""; g.setAttribute("class", mode);
+        const layer = mode === "taut" ? top : svg; if (g.parentNode !== layer) layer.appendChild(g);
+        const s = mode === "taut" ? Math.max(sp, sq, .05) : 0, [l, f] = g.children;  // links stretch thinner-dashed and brighter
+        l.style.stroke = mode === "taut" ? `rgba(245,177,76,${(.55 + .4 * s).toFixed(2)})` : ""; l.style.strokeWidth = s ? 2.2 - 0.9 * s : "";  // thins as it stretches
+        f.style.strokeDasharray = s ? `2 ${(9 + 14 * s).toFixed(1)}` : "";
+        const straight = mode === "taut" || Math.abs(x1 - x2) < 1 || Math.abs(y1 - y2) < 1, mx = (x1 + x2) / 2;
         const d = straight ? `M${x1} ${y1}L${x2} ${y2}` : `M${x1} ${y1}C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`;
         g.children[0].setAttribute("d", d); g.children[1].setAttribute("d", d);
         g.children[2].setAttribute("cx", x1); g.children[2].setAttribute("cy", y1);
         g.children[3].setAttribute("cx", x2); g.children[3].setAttribute("cy", y2); }); }
-    requestAnimationFrame(tick); };
+    if (window.__hudLinks === "%%BUILD%%") requestAnimationFrame(tick); };
   tick();
 };
-const moved = () => { try { return Object.keys(localStorage).some(k => k.startsWith("hud-pos:")); } catch (e) { return false; } };
 export const className = `
   left: 0; top: 0; width: 100%; height: 100%; pointer-events: none;
   .flow { stroke-dasharray: 3 4; animation: f 1.6s linear infinite } @keyframes f { to { stroke-dashoffset: -14 } }
