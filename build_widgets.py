@@ -1228,7 +1228,7 @@ const SPIDER_SVG = '<svg class="sp" viewBox="-14 -14 28 28">' +
   '<g fill="#4a423b" stroke="rgba(242,237,230,.7)" stroke-width=".5"><ellipse cx="0" cy="4.2" rx="3.6" ry="4.6"/>' +
   '<ellipse cx="0" cy="-2" rx="2.4" ry="2.8"/></g><path d="M0 1.6V6.5M-1.5 3.5L0 4.6L1.5 3.5" stroke="rgba(245,177,76,.75)" stroke-width=".6" fill="none"/>' +
   '<circle class="eye" cx="-.8" cy="-4" r=".55"/><circle class="eye" cx=".8" cy="-4" r=".55"/></svg>';
-const SPIDERS = 10, WEB_LIFE = 20 * 60000, WEB_MAX = 30, PANIC_WEBS = 160;
+const SPIDERS = 10, WEB_LIFE = 20 * 60000, WEB_MAX = 30, PANIC_WEBS = 300, CELL = 70;
 const installSpider = () => {
   let st = document.getElementById("hud-spider-style");
   if (!st) { st = document.createElement("style"); st.id = "hud-spider-style"; document.head.appendChild(st); }
@@ -1287,6 +1287,27 @@ const installSpider = () => {
     if (wild.length >= PANIC_WEBS) { wild[0].g.remove(); webs = webs.filter(w => w !== wild[0]); }
     const w = { p: o.dataset.hud, c: -1, fx: (x - r.left) / r.width, fy: (y - r.top) / r.height, a: Math.floor(rnd(0, 360)),
       t: Date.now(), seed: Math.floor(Math.random() * 1e9) }; webs.push(w); drawWeb(w, true); saveWebs(); };
+  // Offline coverage: each panel is split into ~70 px cells; spiders fill the empty ones, spread over the panels, so the webs
+  // end up smothering everything evenly instead of piling up along wherever the spiders happened to walk.
+  const grid = o => { const r = o.getBoundingClientRect(); return [Math.max(1, Math.round(r.width / CELL)), Math.max(1, Math.round(r.height / CELL)), r]; };
+  const cellAt = (o, fx, fy) => { const [nc, nr] = grid(o), k = v => Math.max(0, Math.min(.999, v));
+    return Math.floor(k(fy) * nr) * nc + Math.floor(k(fx) * nc); };
+  const holes = o => { const [nc, nr] = grid(o), have = new Set(webs.filter(w => w.c < 0 && !w.gone && w.p === o.dataset.hud).map(w => cellAt(o, w.fx, w.fy)));
+    const out = []; for (let k = 0; k < nc * nr; k++) if (!have.has(k)) out.push({ k, fx: (k % nc + .5) / nc, fy: (Math.floor(k / nc) + .5) / nr });
+    return out; };
+  const where = {}, claims = {};   // spider -> panel it is on; panel:cell -> spider heading there
+  // Spiders are shared out by size: each panel's fair share of the crew is its weight (area online, empty cells offline) over the
+  // total, and a spider goes to the panel furthest below its share, so big panels get more spiders and small ones fewer.
+  const share = (i, weight, among) => { const all = panels(), ps = all.map(([o, r]) => [o, weight(o, r)]).filter(([, w]) => w > 0);
+    const sum = ps.reduce((a, [, w]) => a + w, 0), crew = Object.keys(where).filter(j => +j !== i).length + 1;
+    const gaps = ps.filter(([o]) => !among || among.some(([q]) => q === o)).map(([o, w]) =>
+      [o, crew * w / sum - Object.entries(where).filter(([j, p]) => +j !== i && p === o.dataset.hud).length]);
+    if (!gaps.length) return [null, 0];   // random pick weighted by how far each panel is below its share (so still uniform overall)
+    let k = Math.random() * gaps.reduce((a, [, g]) => a + Math.max(.02, g), 0);
+    for (const [o, g] of gaps) if ((k -= Math.max(.02, g)) <= 0) return [o, g];
+    return gaps[gaps.length - 1]; };
+  const area = (o, r) => r.width * r.height;
+  const target = i => share(i, o => holes(o).length)[0];
   let wasOff = false;
   window.__hudWebTimer = setInterval(() => { if (!alive()) return;
     const off = offline(); root.classList.toggle("panic", off);
@@ -1307,8 +1328,10 @@ const installSpider = () => {
     let busy = false, scared = false, x = 0, y = -30, ang = 180, goalAng = 180, thread = null, mode = "", kick = [0, 0];
     // Offline: speed comes in jerky bursts — mostly 2–4× darts, sometimes a freeze or a quick step backwards.
     let burst = 1, burstEnd = 0, nextWeb = 0;
+    const frac = o => { const r = o.getBoundingClientRect(); return [(x - r.left) / r.width, (y - r.top) / r.height]; };
     const litter = o => { const now = performance.now(); if (!offline()) { nextWeb = now + rnd(300, 1500); return; }
-      if (now > nextWeb) { nextWeb = now + rnd(500, 1400); spinAt(o, x, y); } };
+      if (now < nextWeb) return; nextWeb = now + rnd(500, 1400);
+      const k = cellAt(o, ...frac(o)); if (holes(o).some(h => h.k === k)) spinAt(o, x, y); };   // only where there is no web yet
     const fear = () => { if (!offline()) return 1; const now = performance.now();
       if (now > burstEnd) { const r = Math.random(); burst = r < .12 ? rnd(-1.6, -.6) : r < .25 ? rnd(0, .3) : rnd(2, 4.2); burstEnd = now + rnd(110, 420); }
       return burst; };
@@ -1342,6 +1365,37 @@ const installSpider = () => {
           k = Math.max(0, Math.min(1, k + 30 * pace * fear() * (now - t) / 1000 / Math.max(1, len))); t = now; }
         x = r.left + ax + (bx - ax) * k; y = r.top + ay + (by - ay) * k; put(); litter(o); }
       legs(""); return to; };
+    // Offline: dart over the face to a point (fractions of the panel), webbing as it goes.
+    const dash = async (o, fx, fy) => { const r0 = o.getBoundingClientRect(), ax = x - r0.left, ay = y - r0.top, bx = fx * r0.width, by = fy * r0.height;
+      const len = Math.hypot(bx - ax, by - ay); goalAng = Math.atan2(bx - ax, -(by - ay)) * 180 / Math.PI; legs("walk"); let k = 0, t = performance.now();
+      while (k < 1 && !scared) { stop(); await frame(); const now = performance.now(), r = o.getBoundingClientRect();
+        k = Math.max(0, Math.min(1, k + 45 * pace * fear() * (now - t) / 1000 / Math.max(1, len))); t = now;
+        x = r.left + ax + (bx - ax) * k; y = r.top + ay + (by - ay) * k; put(); litter(o); }
+      legs(""); };
+    const hold = async (o, ms) => { const [fx, fy] = frac(o), t0 = performance.now();
+      while (performance.now() - t0 < ms && !scared) { stop(); await frame(); const r = o.getBoundingClientRect(); x = r.left + fx * r.width; y = r.top + fy * r.height; put(); } };
+    // Fill this panel's empty cells (nearest first, skipping ones another spider is heading for), then come back to the border.
+    const smother = async (o, s) => {
+      while (offline() && !scared) {
+        const [fx, fy] = frac(o), r = o.getBoundingClientRect(), p = o.dataset.hud;
+        const free = holes(o).filter(h => claims[p + ":" + h.k] === undefined || claims[p + ":" + h.k] === i)
+          .map(h => [h, Math.hypot((h.fx - fx) * r.width, (h.fy - fy) * r.height) * rnd(1, 1.6)]).sort((a, b) => a[1] - b[1]);
+        if (!free.length) break;
+        const [h] = free[0], key = p + ":" + h.k; claims[key] = i;
+        await dash(o, h.fx + rnd(-.15, .15) / grid(o)[0], h.fy + rnd(-.15, .15) / grid(o)[1]); delete claims[key]; if (scared) break;
+        if (holes(o).some(q => q.k === h.k)) { legs("spin"); spinAt(o, x, y); nextWeb = performance.now() + rnd(500, 1400); await hold(o, rnd(250, 600)); legs(""); }
+      }
+      // back to the nearest point on the border so the normal walking can carry on from there
+      const r = o.getBoundingClientRect(), lx = x - r.left, ly = y - r.top, w = r.width, h = r.height;
+      const opts = [[ly, lx], [w - lx, w + ly], [h - ly, 2 * w + h - lx], [lx, 2 * (w + h) - ly]].sort((a, b) => a[0] - b[0]);
+      s = opts[0][1]; if (!scared) { const [ex, ey] = edge(r, s); await dash(o, (ex - r.left) / w, (ey - r.top) / h); }
+      return s; };
+    // Climb up the silk off the top of the screen and come down onto another panel.
+    const climb = async () => { thread = [x, -10]; goalAng = 0; legs("hangs"); let t = performance.now();
+      while (y > -24 && !scared) { stop(); await frame(); const now = performance.now(); y -= (offline() ? 140 : 70) * pace * Math.max(.5, Math.abs(fear())) * (now - t) / 1000; t = now; put(); } };
+    const hop = async o => { await climb();
+      if (scared) return 0; const r = o.getBoundingClientRect(), s = rnd(24, r.width - 24);
+      x = r.left + s; y = -20; thread = [x, -10]; put(); await drop(r.top, 90); if (!scared) cutSilk(); return s; };
     const rest = async (o, s, ms) => { const t0 = performance.now();
       while (performance.now() - t0 < ms * (offline() ? .2 : 1) && !scared) { stop(); await frame(); [x, y] = edge(o.getBoundingClientRect(), s); put(); } };
     const drop = async (ty, speed) => { thread = [x, y]; goalAng = 180; legs("hangs"); let t = performance.now();
@@ -1355,13 +1409,19 @@ const installSpider = () => {
       if (busy) return false; busy = true; scared = false;
       try {
         const all = panels(); if (!all.length) throw "none";
-        const tops = all.filter(([, r]) => r.top < Math.min(...all.map(([, q]) => q.top)) + 40);
-        let [o, r] = tops[Math.floor(Math.random() * tops.length)], s = rnd(30, r.width - 30);
+        const pick = (offline() && target(i)) || share(i, area)[0];   // whichever panel is furthest below its share
+        let [o, r] = [pick, pick.getBoundingClientRect()], s = rnd(30, r.width - 30);
+        where[i] = o.dataset.hud;
         x = r.left + s; y = -20; thread = [x, -10]; legs("hangs"); put();
         await drop(r.top, 70); await rest(o, s, rnd(1200, 2500)); cutSilk();
         for (;;) {
           if (scared) break;
-          for (let n = Math.floor(rnd(1, 4)); n > 0 && !scared; n--) {   // wander the border, pausing to look around
+          if (offline()) {   // panic: cover this panel, then go wherever the most gaps are left
+            s = await smother(o, s); if (scared) break;
+            const t = offline() && target(i); if (t) { where[i] = t.dataset.hud; s = await hop(t); o = t; continue; }
+          }
+          r = o.getBoundingClientRect();   // bigger panels get explored for longer, so time spent stays even per square inch
+          for (let n = Math.max(1, Math.round(rnd(1, 4) * area(o, r) / 75000)); n > 0 && !scared && !(offline() && target(i)); n--) {   // wander the border, pausing to look around
             r = o.getBoundingClientRect(); const w = r.width, h = r.height;
             const roll = Math.random();
             if (roll < (offline() ? .65 : .3)) {   // cut across the top of the panel to another edge (offline: mostly this, webbing it)
@@ -1371,18 +1431,21 @@ const installSpider = () => {
               legs("spin"); spin(o.dataset.hud, c); await rest(o, s, 4800); legs("");
             } else { s = await walk(o, s, rnd(0, 2 * (w + h))); }
             await rest(o, s, rnd(700, 3500)); }
-          if (scared) break;
+          if (scared) break; if (offline() && target(i)) continue;
           r = o.getBoundingClientRect();
           const below = panels().filter(([q, b]) => q !== o && b.top > r.bottom - 4 && b.top - r.bottom < 60 && b.left < r.right - 40 && b.right > r.left + 40);
-          const [q, b] = below.length ? below[Math.floor(Math.random() * below.length)] : [null, null];
+          const [nq, need] = below.length ? share(i, area, below) : [null, 0];   // only go down if that panel is short of spiders
+          const [q, b] = nq && need > .2 ? [nq, nq.getBoundingClientRect()] : [null, null];
+          if (!q && below.length) { await climb(); break; }   // nothing below needs a spider: go back up the way it came
           const lo = Math.max(r.left, b ? b.left : r.left) + 24, hi = Math.min(r.right, b ? b.right : r.right) - 24;
           s = await walk(o, s, 2 * r.width + r.height - (rnd(lo, hi) - r.left)); if (scared) break;   // to the bottom edge
           await rest(o, s, rnd(500, 1200)); if (scared) break;
           if (!q) { await drop(window.innerHeight + 30, 60); break; }
-          await drop(b.top); if (scared) break; o = q; s = x - b.left; await rest(o, s, rnd(800, 1600)); cutSilk();
+          await drop(b.top); if (scared) break; o = q; where[i] = o.dataset.hud; s = x - b.left; await rest(o, s, rnd(800, 1600)); cutSilk();
         }
         if (scared) await tumble();
       } catch (e) { if (e !== "gone" && e !== "none") console.error(e); }
+      delete where[i]; Object.keys(claims).forEach(k => claims[k] === i && delete claims[k]);
       cutSilk(); sp.setAttribute("class", "sp"); busy = false; return scared ? "kicked" : true;
     };
     const plan = ms => timers[i] = setTimeout(async () => { if (!alive()) return; const how = await cameo();
