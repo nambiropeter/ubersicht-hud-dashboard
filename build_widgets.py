@@ -1190,11 +1190,8 @@ const installCursor = () => {
 // sometimes spins a web at a corner, drops on a thread to the panel below, and lets itself down off the bottom.
 // Webs hang in the gutters for 20 minutes (fading out over the last one) and survive reloads.
 // Click a spider to kick it: it tumbles off the screen and comes back about 30 s later. window.__spiderNow() sends one in right away.
-// With no internet they panic: red eyes, twitching legs, shaking bodies, darting in jerky bursts (even backpedalling), no web
-// rests, every idle spider comes running in, and they leave big round webs wherever they go until the panels are smothered.
-// Once every panel is smothered the spiders flee up their silk, and the fires from the connections panel catch the webs:
-// burning spreads web to web, slowly, outward from there, taking about 6 hours to clear them all; then the spiders come back
-// (and start smothering again if the internet is still down). The moment the internet is back, whatever webs are left fall away.
+// With no internet they panic: red eyes, twitching legs, shaking bodies, and they scurry off the nearest screen edge in jerky
+// bursts (or back up their silk), staying away until the internet is back.
 const SPIDER_CSS = `
   #hud-spider { position:fixed; left:0; top:0; width:100%; height:100%; z-index:99985; pointer-events:none; overflow:visible }
   #hud-spider .silk { fill:none; stroke:rgba(255,255,255,.4); stroke-width:.7 }
@@ -1202,20 +1199,8 @@ const SPIDER_CSS = `
   #hud-spider .web .r { stroke:rgba(255,255,255,.42); stroke-width:.65 }
   #hud-spider .web.new path { stroke-dasharray:1; stroke-dashoffset:1; animation: spweb 4.5s linear forwards }
   #hud-spider .web.new .s { animation-delay: 1.4s }
-  #hud-spider .web.quick path { stroke:rgba(255,255,255,.5); stroke-width:.8 } #hud-spider .web.quick .r { stroke:rgba(255,255,255,.58) }
-  #hud-spider .web.new.quick path { animation-duration: 1.3s } #hud-spider .web.new.quick .s { animation-delay: .4s }
   #hud-spider .web.gone { transition: opacity .9s, transform .9s ease-in; opacity:0 !important }
   @keyframes spweb { to { stroke-dashoffset:0 } }
-  #hud-spider .web.burn { filter: drop-shadow(0 0 2.5px rgba(255,110,40,.85)) }
-  #hud-spider .web.burn path { stroke-dasharray:1; stroke-width:.9; animation: spburn var(--bt) ease-in both }
-  #hud-spider .web.burn .s { animation-duration: calc(var(--bt) * .8) }
-  @keyframes spburn { 0% { stroke:#ffe2a0; stroke-dashoffset:0 } 30% { stroke:#ff9a3c; stroke-dashoffset:0 } 100% { stroke:#6a200c; stroke-dashoffset:-1 } }
-  #hud-spider .fire { transform-origin:0 0; animation: spfire var(--bt) ease-in-out both }
-  @keyframes spfire { 0% { transform:scale(.2); opacity:0 } 15% { transform:scale(1.1); opacity:1 } 70% { transform:scale(1); opacity:1 } 100% { transform:scale(.3); opacity:0 } }
-  #hud-spider .fl { transform-box:fill-box; transform-origin:50% 100%; filter: drop-shadow(0 0 3px #ff6a2a); animation: spfl var(--t) ease-in-out infinite alternate }
-  @keyframes spfl { 0% { transform:scale(.75,.7) skewX(-6deg); opacity:.75 } 50% { transform:scale(1.05,1.15) skewX(5deg); opacity:1 } 100% { transform:scale(.9,.9) skewX(-3deg); opacity:.85 } }
-  #hud-spider .em { filter: drop-shadow(0 0 2px #ff8a3a); animation: spem var(--t) ease-out infinite; animation-delay: var(--d) }
-  @keyframes spem { 0% { transform:translate(0,0); opacity:1 } 100% { transform:translate(var(--dx),-30px); opacity:0 } }
   #hud-spider .sp { position:absolute; left:-14px; top:-14px; width:28px; height:28px; pointer-events:auto; cursor:none; display:none;
                     filter: drop-shadow(0 1px 1.5px rgba(0,0,0,.65)) drop-shadow(0 0 2px rgba(242,237,230,.22)) }
   #hud-spider .sp.on { display:block }
@@ -1242,7 +1227,7 @@ const SPIDER_SVG = '<svg class="sp" viewBox="-14 -14 28 28">' +
   '<g fill="#4a423b" stroke="rgba(242,237,230,.7)" stroke-width=".5"><ellipse cx="0" cy="4.2" rx="3.6" ry="4.6"/>' +
   '<ellipse cx="0" cy="-2" rx="2.4" ry="2.8"/></g><path d="M0 1.6V6.5M-1.5 3.5L0 4.6L1.5 3.5" stroke="rgba(245,177,76,.75)" stroke-width=".6" fill="none"/>' +
   '<circle class="eye" cx="-.8" cy="-4" r=".55"/><circle class="eye" cx=".8" cy="-4" r=".55"/></svg>';
-const SPIDERS = 10, BURN_ALL = 6 * 3600000, WEB_LIFE = 20 * 60000, WEB_MAX = 30, PANIC_WEBS = 300, CELL = 70;
+const SPIDERS = 10, WEB_LIFE = 20 * 60000, WEB_MAX = 30;
 const installSpider = () => {
   let st = document.getElementById("hud-spider-style");
   if (!st) { st = document.createElement("style"); st.id = "hud-spider-style"; document.head.appendChild(st); }
@@ -1253,11 +1238,9 @@ const installSpider = () => {
   document.querySelectorAll("#hud-spider").forEach(n => n.remove());
   const alive = () => window.__hudSpider === "%%BUILD%%";
   const NS = "http://www.w3.org/2000/svg", root = document.createElement("div"); root.id = "hud-spider";
-  root.innerHTML = '<svg width="100%" height="100%" style="position:absolute;left:0;top:0;overflow:visible"><defs><linearGradient id="spflame" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#fff1b0"/><stop offset=".35" stop-color="#ffb340"/>' +
-    '<stop offset=".7" stop-color="#ff5a24"/><stop offset="1" stop-color="#d9261c" stop-opacity="0"/></linearGradient></defs>' +
-    '<g class="webs"></g><g class="silks"></g><g class="fires"></g></svg>';
+  root.innerHTML = '<svg width="100%" height="100%" style="position:absolute;left:0;top:0;overflow:visible"><g class="webs"></g><g class="silks"></g></svg>';
   document.body.appendChild(root);
-  const websG = root.querySelector(".webs"), silksG = root.querySelector(".silks"), firesG = root.querySelector(".fires");
+  const websG = root.querySelector(".webs"), silksG = root.querySelector(".silks");
   const rnd = (a, b) => a + Math.random() * (b - a);
   const offline = () => !!window.__offline || !navigator.onLine;
   const frame = () => new Promise(r => requestAnimationFrame(r));
@@ -1269,14 +1252,13 @@ const installSpider = () => {
   const saveWebs = () => { try { localStorage.setItem("hud-webs", JSON.stringify(webs.map(({ p, c, t, seed, fx, fy, a }) => ({ p, c, t, seed, fx, fy, a })))); } catch (e) {} };
   const seeded = seed => () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
     t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
-  const webPaths = (seed, full) => {   // drawn at the origin, spanning the quadrant between angle 0 and 90° (x right, y down), or all round
-    const r = seeded(seed), R = (full ? 45 : 30) + r() * (full ? 45 : 22), n = full ? 12 + Math.floor(r() * 5) : 6 + Math.floor(r() * 3), angs = [], lens = [];
-    for (let i = 0; i < n; i++) { angs.push((i / (n - 1)) * (full ? 2 : .5) * Math.PI + (i && i < n - 1 ? (r() - .5) * .18 : 0)); lens.push(R * (.85 + r() * .25)); }
-    if (full) lens[n - 1] = lens[0];   // the last spoke is the first one, closing the spiral
+  const webPaths = (seed) => {   // drawn at the origin, spanning the quadrant between angle 0 and 90° (x right, y down)
+    const r = seeded(seed), R = 30 + r() * 22, n = 6 + Math.floor(r() * 3), angs = [], lens = [];
+    for (let i = 0; i < n; i++) { angs.push((i / (n - 1)) * .5 * Math.PI + (i && i < n - 1 ? (r() - .5) * .18 : 0)); lens.push(R * (.85 + r() * .25)); }
     const P = (a, l) => [Math.cos(a) * l, Math.sin(a) * l];
     let rad = "", spiral = "";
     angs.forEach((a, i) => { const [x, y] = P(a, lens[i]); rad += `M0 0L${x.toFixed(1)} ${y.toFixed(1)}`; });
-    const rings = full ? 9 + Math.floor(r() * 4) : 5 + Math.floor(r() * 3);
+    const rings = 5 + Math.floor(r() * 3);
     for (let k = 1; k <= rings; k++) { const f = k / (rings + .6);
       angs.forEach((a, i) => { const [x, y] = P(a, lens[i] * f * (.94 + r() * .1));
         if (!i) { spiral += `M${x.toFixed(1)} ${y.toFixed(1)}`; return; }
@@ -1286,35 +1268,20 @@ const installSpider = () => {
   };
   const OUT = [180, 270, 0, 90];   // the quadrant facing away from the panel at each corner
   const placeWeb = w => { if (w.gone) return; const o = panelEl(w.p); if (!o) { w.g.style.display = "none"; return; }
-    const r = o.getBoundingClientRect(), [x, y] = w.c < 0 ? [r.left + w.fx * r.width, r.top + w.fy * r.height]
-      : [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]][w.c];
-    const left = w.c < 0 ? 60000 : WEB_LIFE - (Date.now() - w.t);   // panic webs stay until the internet is back (or they burn)
-    if (w.fl && !w.fl.getAttribute("transform")) w.fl.setAttribute("transform", `translate(${x} ${y})`);
-    const tf = `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${w.c < 0 ? w.a : OUT[w.c]})`, op = Math.max(0, Math.min(1, left / 60000)).toFixed(2);
+    const r = o.getBoundingClientRect(), [x, y] = [[r.left, r.top], [r.right, r.top], [r.right, r.bottom], [r.left, r.bottom]][w.c];
+    const left = WEB_LIFE - (Date.now() - w.t);
+    const tf = `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${OUT[w.c]})`, op = Math.max(0, Math.min(1, left / 60000)).toFixed(2);
     if (w.tf === tf && w.op === op) return; w.tf = tf; w.op = op;   // unchanged webs aren't touched, so they aren't repainted
     w.g.style.display = ""; w.g.setAttribute("transform", tf); w.g.style.opacity = op; };
-  const drawWeb = (w, fresh) => { w.g = document.createElementNS(NS, "g"); w.g.setAttribute("class", "web" + (fresh ? " new" : "") + (w.c < 0 ? " quick" : ""));
-    w.g.innerHTML = webPaths(w.seed, w.c < 0); websG.appendChild(w.g); placeWeb(w); };
-  webs = webs.filter(w => w.c >= 0 ? Date.now() - w.t < WEB_LIFE : offline()); webs.forEach(w => drawWeb(w, false));
+  const drawWeb = (w, fresh) => { w.g = document.createElementNS(NS, "g"); w.g.setAttribute("class", "web" + (fresh ? " new" : ""));
+    w.g.innerHTML = webPaths(w.seed); websG.appendChild(w.g); placeWeb(w); };
+  webs = webs.filter(w => w.c >= 0 && Date.now() - w.t < WEB_LIFE); webs.forEach(w => drawWeb(w, false));
   const spin = (p, c) => { webs.filter(w => w.p === p && w.c === c).forEach(w => w.g.remove());
     webs = webs.filter(w => !(w.p === p && w.c === c));
-    const corner = webs.filter(w => w.c >= 0); if (corner.length >= WEB_MAX) { corner[0].g.remove(); webs = webs.filter(w => w !== corner[0]); }
+    if (webs.length >= WEB_MAX) { webs[0].g.remove(); webs.shift(); }
     const w = { p, c, t: Date.now(), seed: Math.floor(Math.random() * 1e9) }; webs.push(w); drawWeb(w, true); saveWebs(); };
-  // A panicked web anywhere on (or at the edge of) a panel, stored as a fraction of its size so it rides along with it.
-  const spinAt = (o, x, y) => { const r = o.getBoundingClientRect(), wild = webs.filter(w => w.c < 0);
-    if (wild.length >= PANIC_WEBS) { wild[0].g.remove(); webs = webs.filter(w => w !== wild[0]); }
-    const w = { p: o.dataset.hud, c: -1, fx: (x - r.left) / r.width, fy: (y - r.top) / r.height, a: Math.floor(rnd(0, 360)),
-      t: Date.now(), seed: Math.floor(Math.random() * 1e9) }; webs.push(w); drawWeb(w, true); saveWebs(); };
-  // Offline coverage: each panel is split into ~70 px cells; spiders fill the empty ones, spread over the panels, so the webs
-  // end up smothering everything evenly instead of piling up along wherever the spiders happened to walk.
-  const grid = o => { const r = o.getBoundingClientRect(); return [Math.max(1, Math.round(r.width / CELL)), Math.max(1, Math.round(r.height / CELL)), r]; };
-  const cellAt = (o, fx, fy) => { const [nc, nr] = grid(o), k = v => Math.max(0, Math.min(.999, v));
-    return Math.floor(k(fy) * nr) * nc + Math.floor(k(fx) * nc); };
-  const holes = o => { const [nc, nr] = grid(o), have = new Set(webs.filter(w => w.c < 0 && !w.gone && w.p === o.dataset.hud).map(w => cellAt(o, w.fx, w.fy)));
-    const out = []; for (let k = 0; k < nc * nr; k++) if (!have.has(k)) out.push({ k, fx: (k % nc + .5) / nc, fy: (Math.floor(k / nc) + .5) / nr });
-    return out; };
-  const where = {}, claims = {};   // spider -> panel it is on; panel:cell -> spider heading there
-  // Spiders are shared out by size: each panel's fair share of the crew is its weight (area online, empty cells offline) over the
+  const where = {};   // spider -> panel it is on
+  // Spiders are shared out by size: each panel's fair share of the crew is its area over the
   // total, and a spider goes to the panel furthest below its share, so big panels get more spiders and small ones fewer.
   const share = (i, weight, among) => { const all = panels(), ps = all.map(([o, r]) => [o, weight(o, r)]).filter(([, w]) => w > 0);
     const sum = ps.reduce((a, [, w]) => a + w, 0), crew = Object.keys(where).filter(j => +j !== i).length + 1;
@@ -1325,50 +1292,11 @@ const installSpider = () => {
     for (const [o, g] of gaps) if ((k -= Math.max(.02, g)) <= 0) return [o, g];
     return gaps[gaps.length - 1]; };
   const area = (o, r) => r.width * r.height;
-  const target = i => share(i, o => holes(o).length)[0];
-  // ── Fire: once the panels are smothered, the burning connections set the webs alight, one at a time, spreading outward.
-  // The pace is fixed when the fire starts (BURN_ALL spread over the webs there were) and saved, so reloads keep the schedule.
-  let fire = null; try { fire = offline() && JSON.parse(localStorage.getItem("hud-fire") || "null"); } catch (e) {}
-  const setFire = on => { fire = on; try { on ? localStorage.setItem("hud-fire", JSON.stringify(on)) : localStorage.removeItem("hud-fire"); } catch (e) {} };
-  let scorched = [];
-  const webXY = w => { const o = panelEl(w.p); if (!o) return null; const r = o.getBoundingClientRect(); return [r.left + w.fx * r.width, r.top + w.fy * r.height]; };
-  const flames = seed => { const r = seeded(seed); let out = "";   // three little fires scattered over the web, each with flame tongues and embers
-    for (let f = 0; f < 3; f++) { const fx = (r() - .5) * 50, fy = (r() - .5) * 50, z = .8 + r() * .6;
-      out += `<g transform="translate(${fx.toFixed(1)} ${fy.toFixed(1)}) scale(${z.toFixed(2)})">`;
-      [[-3, 9, .8], [3, 10, .7], [0, 14, 1]].forEach(([dx, h, w], j) => { out += `<path class="fl" fill="url(#spflame)" style="--t:${(.28 + j * .09 + r() * .1).toFixed(2)}s" ` +
-        `d="M${dx - 3.5 * w},1 C${dx - 4.5 * w},${-h * .45} ${dx - 1},${-h * .7} ${dx},${-h} C${dx + 1},${-h * .7} ${dx + 4.5 * w},${-h * .45} ${dx + 3.5 * w},1 Z"/>`; });
-      for (let j = 0; j < 3; j++) out += `<circle class="em" cx="${(r() * 8 - 4).toFixed(1)}" cy="-4" r="${j % 2 ? .9 : 1.3}" fill="${j % 2 ? "#ffd27a" : "#ff7a3a"}" ` +
-        `style="--dx:${(r() * 12 - 6).toFixed(1)}px;--t:${(1 + r() * .7).toFixed(2)}s;--d:${(r() * 1.2).toFixed(2)}s"/>`;
-      out += "</g>"; }
-    return out; };
-  const ignite = w => { const bt = rnd(30, 50); w.burn = true; scorched.push(w);
-    w.g.style.setProperty("--bt", bt + "s"); w.g.classList.remove("new"); w.g.classList.add("burn");
-    w.fl = document.createElementNS(NS, "g"); w.fl.innerHTML = `<g class="fire" style="--bt:${bt}s">${flames(w.seed)}</g>`; firesG.appendChild(w.fl); placeWeb(w);
-    timers.push(setTimeout(() => { if (w.gone) return; w.g.remove(); w.fl.remove(); webs = webs.filter(q => q !== w); saveWebs(); }, bt * 1000 + 200)); };
-  const spread = () => {   // the unburnt web closest to the fire (roughly, so the front stays ragged); the first one is by the connections panel
-    const live = webs.filter(w => w.c < 0 && !w.burn && !w.gone).map(w => [w, webXY(w)]).filter(([, p]) => p); if (!live.length) return;
-    const from = scorched.map(webXY).filter(Boolean), cp = panelEl("connections"), cr = cp && cp.getBoundingClientRect();
-    if (!from.length) from.push(cr ? [cr.left + cr.width / 2, cr.top + cr.height / 2] : live[0][1]);
-    let best = null, bd = Infinity;
-    for (const [w, [x, y]] of live) { let d = Infinity; for (const [fx, fy] of from) d = Math.min(d, Math.hypot(x - fx, y - fy)); d *= rnd(1, 1.5); if (d < bd) { bd = d; best = w; } }
-    ignite(best); };
   let wasOff = false;
   window.__hudWebTimer = setInterval(() => { if (!alive()) return;
     const off = offline(); root.classList.toggle("panic", off);
-    if (off && !wasOff) crew.forEach(go => timers.push(setTimeout(() => alive() && offline() && go(), rnd(300, 5000))));   // everyone comes running
-    if (!off && wasOff) {   // back online: the panic webs drop away
-      setFire(false); scorched = [];
-      webs.filter(w => w.c < 0).forEach(w => { w.gone = true; w.g.classList.add("gone"); if (w.fl) w.fl.remove();
-        w.g.setAttribute("transform", w.g.getAttribute("transform") + " translate(0 40) scale(.6)"); setTimeout(() => w.g.remove(), 1000); });
-      webs = webs.filter(w => w.c >= 0); saveWebs(); }
     wasOff = off;
-    const wild = webs.filter(w => w.c < 0 && !w.gone);
-    if (off && !fire && wild.length && panels().every(([o]) => !holes(o).length))   // smothered: spiders flee, fire comes
-      setFire({ t: Date.now(), n: wild.length, lit: 0 });
-    if (off && fire) { const left = wild.filter(w => !w.burn);
-      if (!wild.length) setFire(null);   // all burnt: the spiders can come back
-      else if (left.length && Date.now() >= fire.t + fire.lit * BURN_ALL / fire.n) { spread(); setFire({ ...fire, lit: fire.lit + 1 }); } }
-    const old = webs.filter(w => w.c >= 0 && Date.now() - w.t >= WEB_LIFE); if (old.length) { old.forEach(w => w.g.remove()); webs = webs.filter(w => !old.includes(w)); saveWebs(); }
+    const old = webs.filter(w => Date.now() - w.t >= WEB_LIFE); if (old.length) { old.forEach(w => w.g.remove()); webs = webs.filter(w => !old.includes(w)); saveWebs(); }
     webs.forEach(placeWeb); }, 300);
 
   // ── One spider.
@@ -1378,11 +1306,7 @@ const installSpider = () => {
     const silk = document.createElementNS(NS, "path"); silk.setAttribute("class", "silk"); silksG.appendChild(silk);
     let busy = false, scared = false, x = 0, y = -30, ang = 180, goalAng = 180, thread = null, mode = "", kick = [0, 0];
     // Offline: speed comes in jerky bursts — mostly 2–4× darts, sometimes a freeze or a quick step backwards.
-    let burst = 1, burstEnd = 0, nextWeb = 0;
-    const frac = o => { const r = o.getBoundingClientRect(); return [(x - r.left) / r.width, (y - r.top) / r.height]; };
-    const litter = o => { const now = performance.now(); if (fire) return; if (!offline()) { nextWeb = now + rnd(300, 1500); return; }
-      if (now < nextWeb) return; nextWeb = now + rnd(500, 1400);
-      const k = cellAt(o, ...frac(o)); if (holes(o).some(h => h.k === k)) spinAt(o, x, y); };   // only where there is no web yet
+    let burst = 1, burstEnd = 0;
     const fear = () => { if (!offline()) return 1; const now = performance.now();
       if (now > burstEnd) { const r = Math.random(); burst = r < .12 ? rnd(-1.6, -.6) : r < .25 ? rnd(0, .3) : rnd(2, 4.2); burstEnd = now + rnd(110, 420); }
       return burst; };
@@ -1395,6 +1319,7 @@ const installSpider = () => {
       if (thread) { silk.style.transition = "none"; silk.style.opacity = 1; silk.setAttribute("d", `M${thread[0]} ${thread[1]}L${x} ${y}`); } };
     const legs = m => { mode = m; sp.setAttribute("class", "sp on " + m); };
     const stop = () => { if (!alive()) throw "gone"; };
+    const quit = () => scared || offline();   // kicked, or the internet dropped: stop whatever it's doing
     const cutSilk = () => { thread = null; silk.style.transition = "opacity 1.4s"; silk.style.opacity = 0; };
     const edge = (r, s) => { const w = r.width, h = r.height, P = 2 * (w + h); s = ((s % P) + P) % P;
       if (s < w) return [r.left + s, r.top, 90]; if (s < w + h) return [r.right, r.top + s - w, 180];
@@ -1402,88 +1327,63 @@ const installSpider = () => {
     const walk = async (o, s, to, speed) => {
       const r0 = o.getBoundingClientRect(), P = 2 * (r0.width + r0.height); let d = ((to - s) % P + P) % P; if (d > P / 2) d -= P;
       const dir = Math.sign(d); legs("walk"); let t = performance.now();
-      while (Math.abs(d) > .5 && !scared) { stop(); await frame(); const now = performance.now(), f = fear(), v = Math.min(Math.abs(d), (speed || 38) * pace * Math.abs(f) * (now - t) / 1000) * Math.sign(f); t = now;
-        s += dir * v; d -= dir * v; const [nx, ny, a] = edge(o.getBoundingClientRect(), s); x = nx; y = ny; goalAng = dir > 0 ? a : a + 180; put(); litter(o); }
+      while (Math.abs(d) > .5 && !quit()) { stop(); await frame(); const now = performance.now(), f = fear(), v = Math.min(Math.abs(d), (speed || 38) * pace * Math.abs(f) * (now - t) / 1000) * Math.sign(f); t = now;
+        s += dir * v; d -= dir * v; const [nx, ny, a] = edge(o.getBoundingClientRect(), s); x = nx; y = ny; goalAng = dir > 0 ? a : a + 180; put(); }
       legs(""); return s; };
     // Walk straight across the panel's face from border point s to border point to (over its content).
     const cross = async (o, s, to) => {
       const at = q => { const r = o.getBoundingClientRect(), [ex, ey] = edge(r, q); return [ex - r.left, ey - r.top]; };
       const [ax, ay] = at(s), [bx, by] = at(to), len = Math.hypot(bx - ax, by - ay), stopAt = Math.random() < .6 ? rnd(.3, .7) : 2;
       goalAng = Math.atan2(bx - ax, -(by - ay)) * 180 / Math.PI; legs("walk"); let k = 0, t = performance.now(), paused = 0;
-      while (k < 1 && !scared) { stop(); await frame(); const now = performance.now(), r = o.getBoundingClientRect();
-        if (k >= stopAt && !paused && !offline()) { paused = now + rnd(1500, 4500); legs(""); }   // stop for a look at what's on the panel
+      while (k < 1 && !quit()) { stop(); await frame(); const now = performance.now(), r = o.getBoundingClientRect();
+        if (k >= stopAt && !paused) { paused = now + rnd(1500, 4500); legs(""); }   // stop for a look at what's on the panel
         if (paused && now < paused) { t = now; } else { if (paused) { paused = -1; legs("walk"); }
           k = Math.max(0, Math.min(1, k + 30 * pace * fear() * (now - t) / 1000 / Math.max(1, len))); t = now; }
-        x = r.left + ax + (bx - ax) * k; y = r.top + ay + (by - ay) * k; put(); litter(o); }
+        x = r.left + ax + (bx - ax) * k; y = r.top + ay + (by - ay) * k; put(); }
       legs(""); return to; };
-    // Offline: dart over the face to a point (fractions of the panel), webbing as it goes.
-    const dash = async (o, fx, fy) => { const r0 = o.getBoundingClientRect(), ax = x - r0.left, ay = y - r0.top, bx = fx * r0.width, by = fy * r0.height;
-      const len = Math.hypot(bx - ax, by - ay); goalAng = Math.atan2(bx - ax, -(by - ay)) * 180 / Math.PI; legs("walk"); let k = 0, t = performance.now();
-      while (k < 1 && !scared) { stop(); await frame(); const now = performance.now(), r = o.getBoundingClientRect();
-        k = Math.max(0, Math.min(1, k + 45 * pace * fear() * (now - t) / 1000 / Math.max(1, len))); t = now;
-        x = r.left + ax + (bx - ax) * k; y = r.top + ay + (by - ay) * k; put(); litter(o); }
-      legs(""); };
-    const hold = async (o, ms) => { const [fx, fy] = frac(o), t0 = performance.now();
-      while (performance.now() - t0 < ms && !scared) { stop(); await frame(); const r = o.getBoundingClientRect(); x = r.left + fx * r.width; y = r.top + fy * r.height; put(); } };
-    // Fill this panel's empty cells (nearest first, skipping ones another spider is heading for), then come back to the border.
-    const smother = async (o, s) => {
-      while (offline() && !scared && !fire) {
-        const [fx, fy] = frac(o), r = o.getBoundingClientRect(), p = o.dataset.hud;
-        const free = holes(o).filter(h => claims[p + ":" + h.k] === undefined || claims[p + ":" + h.k] === i)
-          .map(h => [h, Math.hypot((h.fx - fx) * r.width, (h.fy - fy) * r.height) * rnd(1, 1.6)]).sort((a, b) => a[1] - b[1]);
-        if (!free.length) break;
-        const [h] = free[0], key = p + ":" + h.k; claims[key] = i;
-        await dash(o, h.fx + rnd(-.15, .15) / grid(o)[0], h.fy + rnd(-.15, .15) / grid(o)[1]); delete claims[key]; if (scared) break;
-        if (holes(o).some(q => q.k === h.k)) { legs("spin"); spinAt(o, x, y); nextWeb = performance.now() + rnd(500, 1400); await hold(o, rnd(250, 600)); legs(""); }
-      }
-      // back to the nearest point on the border so the normal walking can carry on from there
-      const r = o.getBoundingClientRect(), lx = x - r.left, ly = y - r.top, w = r.width, h = r.height;
-      const opts = [[ly, lx], [w - lx, w + ly], [h - ly, 2 * w + h - lx], [lx, 2 * (w + h) - ly]].sort((a, b) => a[0] - b[0]);
-      s = opts[0][1]; if (!scared && !fire) { const [ex, ey] = edge(r, s); await dash(o, (ex - r.left) / w, (ey - r.top) / h); }
-      return s; };
     // Climb up the silk off the top of the screen and come down onto another panel.
     const climb = async () => { thread = [x, -10]; goalAng = 0; legs("hangs"); let t = performance.now();
-      while (y > -24 && !scared) { stop(); await frame(); const now = performance.now(); y -= (offline() ? 140 : 70) * pace * Math.max(.5, Math.abs(fear())) * (now - t) / 1000; t = now; put(); } };
-    const hop = async o => { await climb();
-      if (scared) return 0; const r = o.getBoundingClientRect(), s = rnd(24, r.width - 24);
-      x = r.left + s; y = -20; thread = [x, -10]; put(); await drop(r.top, 90); if (!scared) cutSilk(); return s; };
+      while (y > -24 && !scared) { stop(); await frame(); const now = performance.now(); y -= (offline() ? 220 : 70) * pace * Math.max(.5, Math.abs(fear())) * (now - t) / 1000; t = now; put(); } };
     const rest = async (o, s, ms) => { const t0 = performance.now();
-      while (performance.now() - t0 < ms * (offline() ? .2 : 1) && !scared) { stop(); await frame(); [x, y] = edge(o.getBoundingClientRect(), s); put(); } };
+      while (performance.now() - t0 < ms && !quit()) { stop(); await frame(); [x, y] = edge(o.getBoundingClientRect(), s); put(); } };
     const drop = async (ty, speed) => { thread = [x, y]; goalAng = 180; legs("hangs"); let t = performance.now();
-      while (y < ty && !scared) { stop(); await frame(); const now = performance.now(); y = Math.min(ty, y + (speed || 55) * pace * Math.max(.4, Math.abs(fear())) * (now - t) / 1000); t = now;
+      while (y < ty && !quit()) { stop(); await frame(); const now = performance.now(); y = Math.min(ty, y + (speed || 55) * pace * Math.max(.4, Math.abs(fear())) * (now - t) / 1000); t = now;
         x += Math.sin(now / 400 + i) * .08; put(); } };
+    // Offline: scurry off whichever screen edge is closest, in panicky bursts; if it's hanging on its silk, straight back up.
+    const flee = async () => { if (thread) return climb();
+      const W = window.innerWidth, H = window.innerHeight;
+      const [tx, ty] = [[-40, y, x], [W + 40, y, W - x], [x, -40, y], [x, H + 40, H - y]].sort((a, b) => a[2] - b[2])[0];
+      goalAng = Math.atan2(tx - x, -(ty - y)) * 180 / Math.PI; legs("walk fast"); let t = performance.now();
+      while (x > -30 && x < W + 30 && y > -30 && y < H + 30 && !scared) { stop(); await frame(); const now = performance.now();
+        const d = Math.hypot(tx - x, ty - y) || 1, v = 240 * pace * fear() * (now - t) / 1000; t = now;
+        x += (tx - x) / d * v; y += (ty - y) / d * v; put(); } };
     const tumble = async () => { cutSilk(); legs("hangs fast"); let [vx, vy] = kick, spinv = rnd(500, 900) * (vx < 0 ? -1 : 1), t = performance.now();
       while (y < window.innerHeight + 40 && x > -60 && x < window.innerWidth + 60) { stop(); await frame();
         const now = performance.now(), dt = Math.min(.05, (now - t) / 1000); t = now;
         vy += 1500 * dt; vx *= 1 - .4 * dt; x += vx * dt; y += vy * dt; ang += spinv * dt; goalAng = ang; put(); } };
     const cameo = async () => {
-      if (busy) return false; if (fire) return "fire"; busy = true; scared = false;
+      if (busy) return false; if (offline()) return "away"; busy = true; scared = false;
       try {
         const all = panels(); if (!all.length) throw "none";
-        const pick = (offline() && target(i)) || share(i, area)[0];   // whichever panel is furthest below its share
+        const pick = share(i, area)[0];   // whichever panel is furthest below its share
         let [o, r] = [pick, pick.getBoundingClientRect()], s = rnd(30, r.width - 30);
         where[i] = o.dataset.hud;
         x = r.left + s; y = -20; thread = [x, -10]; legs("hangs"); put();
         await drop(r.top, 70); await rest(o, s, rnd(1200, 2500)); cutSilk();
         for (;;) {
-          if (scared) break;
-          if (fire) { await climb(); break; }   // the panels are smothered and the fire is coming: up the silk and away
-          if (offline()) {   // panic: cover this panel, then go wherever the most gaps are left
-            s = await smother(o, s); if (scared) break;
-            const t = offline() && target(i); if (t) { where[i] = t.dataset.hud; s = await hop(t); o = t; continue; }
-          }
+          if (quit()) break;
           r = o.getBoundingClientRect();   // bigger panels get explored for longer, so time spent stays even per square inch
-          for (let n = Math.max(1, Math.round(rnd(1, 4) * area(o, r) / 75000)); n > 0 && !scared && !fire && !(offline() && target(i)); n--) {   // wander the border, pausing to look around
+          for (let n = Math.max(1, Math.round(rnd(1, 4) * area(o, r) / 75000)); n > 0 && !quit(); n--) {   // wander the border, pausing to look around
             r = o.getBoundingClientRect(); const w = r.width, h = r.height;
             const roll = Math.random();
-            if (roll < (offline() ? .65 : .3)) {   // cut across the top of the panel to another edge (offline: mostly this, webbing it)
+            if (roll < .3) {   // cut across the top of the panel to another edge
               const P = 2 * (w + h); s = await cross(o, s, s + rnd(.3, .7) * P);
-            } else if (roll < .6 && !offline()) {   // head for a corner and spin a web there 
-              const c = Math.floor(rnd(0, 4)); s = await walk(o, s, [0, w, w + h, 2 * w + h][c]); if (scared) break;
+            } else if (roll < .6) {   // head for a corner and spin a web there 
+              const c = Math.floor(rnd(0, 4)); s = await walk(o, s, [0, w, w + h, 2 * w + h][c]); if (quit()) break;
               legs("spin"); spin(o.dataset.hud, c); await rest(o, s, 4800); legs("");
             } else { s = await walk(o, s, rnd(0, 2 * (w + h))); }
             await rest(o, s, rnd(700, 3500)); }
-          if (scared) break; if (fire || (offline() && target(i))) continue;
+          if (scared) break;
           r = o.getBoundingClientRect();
           const below = panels().filter(([q, b]) => q !== o && b.top > r.bottom - 4 && b.top - r.bottom < 60 && b.left < r.right - 40 && b.right > r.left + 40);
           const [nq, need] = below.length ? share(i, area, below) : [null, 0];   // only go down if that panel is short of spiders
@@ -1495,14 +1395,14 @@ const installSpider = () => {
           if (!q) { await drop(window.innerHeight + 30, 60); break; }
           await drop(b.top); if (scared) break; o = q; where[i] = o.dataset.hud; s = x - b.left; await rest(o, s, rnd(800, 1600)); cutSilk();
         }
-        if (scared) await tumble();
+        if (scared) await tumble(); else if (offline()) await flee();
       } catch (e) { if (e !== "gone" && e !== "none") console.error(e); }
-      delete where[i]; Object.keys(claims).forEach(k => claims[k] === i && delete claims[k]);
+      delete where[i];
       cutSilk(); sp.setAttribute("class", "sp"); busy = false; return scared ? "kicked" : true;
     };
     const plan = ms => timers[i] = setTimeout(async () => { if (!alive()) return; const how = await cameo();
       if (alive()) plan(next(how)); }, ms);
-    const next = how => how === "kicked" ? rnd(27000, 33000) : how === "fire" ? rnd(20000, 40000) : offline() ? rnd(5000, 20000) : rnd(60000, 240000);
+    const next = how => how === "kicked" ? rnd(27000, 33000) : offline() ? rnd(20000, 40000) : rnd(60000, 240000);
     const go = () => { clearTimeout(timers[i]); const p = cameo(); p.then(how => { if (how && alive()) plan(next(how)); }); return p; };
     plan(rnd(8000, 20000) + i * rnd(8000, 20000));   // staggered arrivals
     return go;
