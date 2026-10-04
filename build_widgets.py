@@ -538,7 +538,14 @@ export const initialState = { output: "", view: savedView() };
 export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: ev.view }
   : ev.type === "SPEED" ? { ...prev, speed: ev.speed, testing: ev.testing } : { ...prev, output: ev.output, error: ev.error };
 const problem = n => (window.__offline = n.ip === "offline" || n.services.every(x => !x.ms)) ? "No internet" : null;
-const weak = ms => !ms || ms >= 150;   // amber, red or down: the link flickers and throws sparks
+// per-service [amber from, red from] in ms, set from how each one reaches Nairobi (measured 2026-10-04, DNS + TCP connect):
+// Meta, TikTok and Google sit on edge caches in Kenya (~20ms); Apple and Netflix are local too but their DNS takes
+// longer (~70ms); Claude's edge and GitHub's Johannesburg servers are ~70ms; Yahoo comes from London (~145ms).
+// Amber is about 2x a service's normal time and red about 5x; services not listed use the default.
+const LIMITS = { Meta: [90, 250], TikTok: [90, 250], Google: [90, 250], Apple: [150, 400], Netflix: [150, 400],
+                 Claude: [150, 400], GitHub: [150, 400], Yahoo: [300, 750] }, LIMIT = [150, 450];
+const lim = s => LIMITS[s.name] || LIMIT;
+const weak = s => !s.ms || s.ms >= lim(s)[0];   // amber, red or down: the link flickers and throws sparks
 // a few sparks per weak link, spraying out from the node and from the middle of the line; fixed angles so they don't jump on refresh
 const sparks = (x, y, c, k) => [0, 1, 2, 3, 4, 5, 6, 7, 8].map(j => {
   const mid = j > 5, px = mid ? (x + 100) / 2 : x, py = mid ? (y + 70) / 2 : y;
@@ -566,7 +573,7 @@ const fire = (x, y, k) => <g key={"f" + k} transform={`translate(${x} ${y})`}>
     style={{ "--dx": (((j * 7 + k) % 11) - 5) + "px", "--t": (1 + (j % 3) * 0.35) + "s", "--d": (j * 0.27 + k * 0.19).toFixed(2) + "s",
     filter: "drop-shadow(0 0 2px #ff8a3a)" }} />)}
 </g>;
-const col = ms => !ms ? "#6f665f" : ms < 150 ? "#4ade80" : ms < 450 ? "#ffb35c" : "#f87171";
+const col = s => !s.ms ? "#6f665f" : s.ms < lim(s)[0] ? "#4ade80" : s.ms < lim(s)[1] ? "#ffb35c" : "#f87171";
 const rate = b => b > 1048576 ? [(b / 1048576).toFixed(1), "MB/s"] : [(b / 1024).toFixed(0), "KB/s"];
 const mbps = b => b >= 1e8 ? Math.round(b / 1e6) : (b / 1e6).toFixed(b >= 1e7 ? 0 : 1);
 const hm = t => new Date(t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
@@ -579,8 +586,8 @@ const Live = ({ n }) => {
   // the hub pulses green when every link is fast, grey when exactly one service is down; a weak link turns it amber
   // and speeds it up, two or more down turn it red, any down service burns, and if everything is down the whole panel goes red
   const down = svcs.filter(s => !s.ms).length, dead = svcs.length > 0 && (down === svcs.length || n.ip === "offline");
-  const alert = svcs.some(s => s.ms && weak(s.ms)) || down > 1, ok = svcs.length > 0 && !alert && down <= 1;
-  const hub = dead || down > 1 ? "#f87171" : ok ? (down ? "#a39a92" : "#4ade80") : "#ffb35c", c = ms => dead ? "#f87171" : col(ms);
+  const alert = svcs.some(s => s.ms && weak(s)) || down > 1, ok = svcs.length > 0 && !alert && down <= 1;
+  const hub = dead || down > 1 ? "#f87171" : ok ? (down ? "#a39a92" : "#4ade80") : "#ffb35c", c = s => dead ? "#f87171" : col(s);
   const [dv, du] = n ? rate(n.down) : ["—", ""], [uv, uu] = n ? rate(n.up) : ["—", ""];
   return (
     <div className="body">
@@ -588,9 +595,9 @@ const Live = ({ n }) => {
         <defs><linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
           <stop offset="0" stopColor="#fff1b0" /><stop offset=".35" stopColor="#ffb340" /><stop offset=".7" stopColor="#ff5a24" /><stop offset="1" stopColor="#d9261c" stopOpacity="0" />
         </linearGradient></defs>
-        {svcs.slice(0, NODES.length).map((s, i) => !s.ms ? null : <line key={"l" + i} className={weak(s.ms) ? "flow weak" : "flow"} x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={c(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
+        {svcs.slice(0, NODES.length).map((s, i) => !s.ms ? null : <line key={"l" + i} className={weak(s) ? "flow weak" : "flow"} x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={c(s)} strokeWidth="1.3" strokeOpacity=".8" />)}
         {svcs.slice(0, NODES.length).map((s, i) => s.ms ? null : reach(NODES[i][0], NODES[i][1], dead ? "#f87171" : "#a39a92", i))}
-        {svcs.slice(0, NODES.length).map((s, i) => weak(s.ms) ? sparks(NODES[i][0], NODES[i][1], c(s.ms), i) : null)}
+        {svcs.slice(0, NODES.length).map((s, i) => weak(s) ? sparks(NODES[i][0], NODES[i][1], c(s), i) : null)}
         {dead && [8, 9, 10].map(k => sparks(100, 70, "#f87171", k))}
         <g className={"hub" + (alert || dead ? " alert" : ok ? " ok" : "")} style={{ "--hub": hub }}>
           <circle className="wave" cx="100" cy="70" r="16" fill="none" stroke={hub} strokeWidth="1" />
@@ -600,10 +607,10 @@ const Live = ({ n }) => {
         </g>
         {svcs.map((s, i) => { const [x, y] = NODES[i], side = y === 70 ? (x < 100 ? -1 : 1) : 0; return (
           <g key={s.name}>
-            <circle className={s.ms ? "pulse" : "char"} cx={x} cy={y} r="4.5" fill={s.ms ? c(s.ms) : "#2a1512"} stroke={s.ms ? "none" : "#ff5a24"} strokeWidth="1.2"
-              style={{ filter: `drop-shadow(0 0 4px ${s.ms ? c(s.ms) : "#ff5a24"})` }} />
+            <circle className={s.ms ? "pulse" : "char"} cx={x} cy={y} r="4.5" fill={s.ms ? c(s) : "#2a1512"} stroke={s.ms ? "none" : "#ff5a24"} strokeWidth="1.2"
+              style={{ filter: `drop-shadow(0 0 4px ${s.ms ? c(s) : "#ff5a24"})` }} />
             {!s.ms && fire(x, y, i)}
-            <text x={side ? x + side * 10 : x} y={y > 70 || side ? y + 16 : y - 9} textAnchor={side < 0 ? "start" : side > 0 ? "end" : "middle"} fontSize="9" fill={dead ? "#f87171" : "#d9cfc6"}>{s.name} <tspan fill={c(s.ms)}>{s.ms ? s.ms + "ms" : "down"}</tspan></text>
+            <text x={side ? x + side * 10 : x} y={y > 70 || side ? y + 16 : y - 9} textAnchor={side < 0 ? "start" : side > 0 ? "end" : "middle"} fontSize="9" fill={dead ? "#f87171" : "#d9cfc6"}>{s.name} <tspan fill={c(s)}>{s.ms ? s.ms + "ms" : "down"}</tspan></text>
           </g>); })}
       </svg>
       <div className="rates num" style={dead ? { color: "#f87171" } : null}>
