@@ -92,7 +92,9 @@ const niceTicks = (lo, hi, n = 3) => {
 const tickFmt = v => v >= 1000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(v >= 100 ? 0 : 2);
 const etDay = t => new Date(t * 1000).toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "short" });
 const etTime = t => new Date(t * 1000).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" });
-const Spark = ({ d, w, h, up, base, ts, axis = false, fill = true, sw = 1.6, fillOp = .26, draw = false }) => {
+// `daily` = one point per trading day (NSE portfolio): month labels and dated tooltips instead of ET weekdays/times
+const dayLab = (t, daily) => daily ? new Date(t * 1000).toLocaleDateString("en-GB", { month: "short" }) : etDay(t);
+const Spark = ({ d, w, h, up, base, ts, axis = false, fill = true, sw = 1.6, fillOp = .26, draw = false, daily = false }) => {
   if (!d || d.length < 2) return <svg width={w} height={h} />;
   const id = _pfx + (++_sid), padR = axis ? 46 : 5, padB = axis ? 18 : 0, cw = w - padR, ch = h - padB;
   const ref = base != null ? base : d[0];
@@ -106,7 +108,7 @@ const Spark = ({ d, w, h, up, base, ts, axis = false, fill = true, sw = 1.6, fil
   const area = `${line}L${last[0].toFixed(1)} ${by.toFixed(1)}L${P[0][0].toFixed(1)} ${by.toFixed(1)}Z`;
   // day dividers (hourly data spans several sessions)
   const days = [];
-  if (axis && ts) ts.forEach((t, i) => { if (!i || etDay(t) !== etDay(ts[i - 1])) days.push(i); });
+  if (axis && ts) ts.forEach((t, i) => { if (!i || dayLab(t, daily) !== dayLab(ts[i - 1], daily)) days.push(i); });
   const move = e => {
     const svg = e.currentTarget.ownerSVGElement, r = svg.getBoundingClientRect();
     const i = Math.max(0, Math.min(d.length - 1, Math.round(((e.clientX - r.left - 2) / (cw - 4)) * (d.length - 1))));
@@ -116,7 +118,8 @@ const Spark = ({ d, w, h, up, base, ts, axis = false, fill = true, sw = 1.6, fil
     const dot = g.querySelector("circle"); dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("fill", d[i] >= ref ? UP : DN);
     const v = g.querySelector(".tv"), s = g.querySelector(".ts"), bx = g.querySelector("rect");
     v.textContent = tickFmt(d[i]) === String(d[i]) ? String(d[i]) : d[i].toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    s.textContent = (ch_ >= 0 ? "+" : "") + ch_.toFixed(2) + "% vs prev close" + (ts ? " · " + etTime(ts[i]) + " ET" : "");
+    s.textContent = (ch_ >= 0 ? "+" : "") + ch_.toFixed(2) + (daily ? "% vs start" : "% vs prev close") + (ts ? " · " + (daily
+      ? new Date(ts[i] * 1000).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : etTime(ts[i]) + " ET") : "");
     const tw = Math.max(v.getComputedTextLength(), s.getComputedTextLength()) + 20, tx = Math.min(Math.max(x - tw / 2, 0), cw - tw);
     bx.setAttribute("x", tx); bx.setAttribute("width", tw); v.setAttribute("x", tx + 10); s.setAttribute("x", tx + 10);
   };
@@ -133,10 +136,10 @@ const Spark = ({ d, w, h, up, base, ts, axis = false, fill = true, sw = 1.6, fil
       </defs>
       {axis && niceTicks(mn, mx).map(v => <g key={v}>
         <line x1="0" x2={cw} y1={Y(v)} y2={Y(v)} stroke="rgba(255,255,255,.05)" />
-        {!near(Y(v)) && <text x={w} y={Y(v) + 3.5} textAnchor="end" fill="#6f665f" fontSize="10" className="num">{tickFmt(v)}</text>}</g>)}
+        {!near(Y(v)) && !(axis && Math.abs(Y(v) - by) < 12) && <text x={w} y={Y(v) + 3.5} textAnchor="end" fill="#6f665f" fontSize="10" className="num">{tickFmt(v)}</text>}</g>)}
       {days.map((i, k) => <g key={i}>
         {k > 0 && <line x1={X(i) - 2} x2={X(i) - 2} y1="0" y2={ch} stroke="rgba(255,255,255,.06)" />}
-        <text x={(X(i) + (k + 1 < days.length ? X(days[k + 1]) : cw)) / 2} y={h - 3} textAnchor="middle" fill="#6f665f" fontSize="9.5" letterSpacing=".12em">{etDay(ts[i]).toUpperCase()}</text></g>)}
+        <text x={(X(i) + (k + 1 < days.length ? X(days[k + 1]) : cw)) / 2} y={h - 3} textAnchor="middle" fill="#6f665f" fontSize="9.5" letterSpacing=".12em">{dayLab(ts[i], daily).toUpperCase()}</text></g>)}
       {fill && <path d={area} fill={`url(#${id}u)`} clipPath={`url(#${id}a)`} />}
       {fill && <path d={area} fill={`url(#${id}d)`} clipPath={`url(#${id}b)`} />}
       <line x1="0" x2={cw} y1={by} y2={by} stroke="rgba(255,255,255,.2)" strokeWidth="1" />
@@ -906,9 +909,15 @@ export const render = ({ output, view, speed: mine, testing: busy }, dispatch) =
 
 # ───────────────────────── MARKETS ─────────────────────────
 widget("markets", r'''// Tech markets: NASDAQ hero chart + the 6 biggest tech names by market cap, with 5-day charts. Edit symbols in ~/.stark/market.py (SPARK).
+// MY NSE (toggle in the header, remembered): your Nairobi Securities Exchange portfolio from ~/.stark/nse.py (holdings in the
+// private ~/.stark/portfolio.json): total value over 3 months, a tile per holding (click to change shares) and + ADD.
 import { run } from "uebersicht";
 export const command = "%%PY%% ~/.stark/market.py json quotes";
 export const refreshFrequency = 5 * 60 * 1000;
+const savedView = () => { try { return localStorage.getItem("mk-view") || "TECH"; } catch (e) { return "TECH"; } };
+export const initialState = { output: "", view: savedView(), pf: window.__pf || null };
+export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: ev.view } : ev.type === "PF" ? { ...prev, pf: ev.pf }
+  : { ...prev, output: ev.output, error: ev.error };
 export const className = `
   %%POS%%%%SHARED%%
   /* the centrepiece: lighter glass, deeper shadow, full amber edge — the side panels sit back */
@@ -953,6 +962,13 @@ export const className = `
   @keyframes flu { 0%, 25% { color:#4ade80; background:rgba(74,222,128,.22) } 100% { background:rgba(74,222,128,0) } }
   @keyframes fld { 0%, 25% { color:#f87171; background:rgba(248,113,113,.22) } 100% { background:rgba(248,113,113,0) } }
   .rk { font-style:normal; color:#ffb35c; font-size:9.5px; font-weight:700; margin-right:5px }
+  .seg { display:inline-flex; gap:2px; padding:2px; border-radius:7px; background:rgba(0,0,0,.18); vertical-align:middle; margin-left:10px }
+  .seg span { padding:2px 7px; border-radius:5px; font-size:8.5px; font-weight:700; letter-spacing:.12em; color:#8c8178; cursor:pointer }
+  .seg span:hover { color:#e6dcd2 } .seg .on { background:rgba(255,255,255,.08); color:#fff7ee }
+  .hp small { font-size:20px; color:#8c8178; margin-right:6px; letter-spacing:0 }
+  .add { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; color:#8c8178; border-style:dashed }
+  .add b { font-size:22px; font-weight:300; color:#f5b14c; line-height:1; transition: transform .2s } .add span { font-size:9.5px; letter-spacing:.14em; font-weight:700 }
+  .add:hover b { transform: scale(1.15) }
   .tcap { float:right; font-size:9px; color:#6f665f; font-weight:500; margin-top:8px }
 `;
 %%FMT%%
@@ -973,7 +989,7 @@ const pick = (root, sym) => {
 };
 // Leaving into a gap between panels sends no mouseleave (Übersicht passes those clicks through to the desktop),
 // so the stage also falls back to NASDAQ 8 s after the mouse last moved over the panel.
-const home = e => { const el = e.currentTarget; clearTimeout(window.__mkHome); window.__mkHome = setTimeout(() => pick(el, "^IXIC"), 8000); };
+const home = e => { const el = e.currentTarget; clearTimeout(window.__mkHome); window.__mkHome = setTimeout(() => pick(el, el.dataset.home || "^IXIC"), 8000); };
 const HeroView = ({ x, label, on }) => (
   <div className={"hero" + (on ? " on" : "")} data-sym={x.sym} onClick={() => yahoo(x.sym)}>
     <div className="hname">{label}</div>
@@ -984,7 +1000,60 @@ const HeroView = ({ x, label, on }) => (
     </div>
     <div className="chart"><Spark d={x.spark} ts={x.ts} base={x.prev} w={650} h={200} sw={2.2} fillOp={.45} axis /></div>
   </div>);
-export const render = ({ output }) => {
+// ── MY NSE ──
+const kes = (v, sign) => (sign && v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const nseOpen = () => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "Africa/Nairobi", hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit" })
+  .formatToParts(new Date()).map(x => [x.type, x.value])); const m = (+p.hour % 24) * 60 + +p.minute;
+  return p.weekday !== "Sat" && p.weekday !== "Sun" && m >= 540 && m < 900; };
+// prices refresh with the panel (every 5 min) while MY NSE is showing; editing runs nse.py's macOS dialogs, then redraws
+const loadPf = (dispatch, args = "", force = false) => {
+  if (!force && (window.__pfBusy || Date.now() - (window.__pfAt || 0) < 4 * 60000)) return; window.__pfBusy = true;
+  run(`%%PY%% ~/.stark/nse.py ${args}`).then(out => { let pf = null; try { pf = JSON.parse(out); } catch (e) {}
+    window.__pfBusy = false; if (pf && !pf.error) { window.__pf = pf; window.__pfAt = Date.now(); } dispatch({ type: "PF", pf: pf || window.__pf }); })
+    .catch(() => { window.__pfBusy = false; }); };
+const PfHero = ({ label, big, ch, right, d, ts, on, k }) => (
+  <div className={"hero" + (on ? " on" : "")} data-sym={k}>
+    <div className="hname">{label}</div>
+    <div className="hrow">
+      <div className="hp num">{big}</div>
+      <div className={"hc num " + (ch >= 0 ? "up" : "dn")}>{pct(ch)}</div>
+      <div className="range num">{right}</div>
+    </div>
+    <div className="chart"><Spark d={d} ts={ts} base={d && d[0]} w={650} h={200} sw={2.2} fillOp={.45} axis daily /></div>
+  </div>);
+const Nse = ({ pf, dispatch }) => {
+  if (!pf) return <div className="hero on muted">Loading your NSE portfolio…</div>;
+  if (pf.error) return <div className="hero on muted">NSE prices unavailable right now.</div>;
+  const t = pf.total, hs = pf.holdings || [], edit = sym => loadPf(dispatch, sym ? "edit " + sym : "add", true);
+  const show = hs.length > 5 ? hs.slice(0, 5) : hs, more = hs.length - show.length;
+  return (
+    <div data-home="PF" onMouseLeave={e => pick(e.currentTarget, "PF")} onMouseMove={home}>
+      <div className="stage">
+        {t ? <PfHero k="PF" on label={<span><b>MY NSE PORTFOLIO</b> · {hs.length} STOCK{hs.length === 1 ? "" : "S"} · 3 MONTHS</span>}
+          big={<span><small>KES</small>{kes(t.value)}</span>} ch={t.pct} d={t.hist} ts={t.ts}
+          right={<span>Today <b className={t.day >= 0 ? "up" : "dn"}>{kes(t.day, 1)}</b><br />
+            {t.paid ? <span>Total gain <b className={t.value >= t.paid ? "up" : "dn"}>{kes(t.value - t.paid, 1)}</b></span> : <span>Prices {pf.asof || "delayed"}</span>}</span>} />
+          : <div className="hero on muted" data-sym="PF">No holdings yet. Click + ADD to put in your first stock.</div>}
+        {hs.map(x => <PfHero key={x.sym} k={x.sym} label={<span><b>{x.sym}</b> · {x.name} · {x.shares} SHARES</span>}
+          big={<span><small>KES</small>{kes(x.p)}</span>} ch={x.pct} d={x.hist} ts={x.ts}
+          right={<span>Value <b>{kes(x.value)}</b><br />Today <b className={x.day >= 0 ? "up" : "dn"}>{kes(x.day, 1)}</b>
+            {x.cost ? <span><br />Gain <b className={x.p >= x.cost ? "up" : "dn"}>{kes((x.p - x.cost) * x.shares, 1)}</b></span> : null}</span>} />)}
+      </div>
+      <div className="grid">
+        {show.map(x => (
+          <div className={"tile " + (x.ch >= 0 ? "tu" : "td")} key={x.sym} data-sym={x.sym} onClick={() => edit(x.sym)} title="Click to change shares"
+            onMouseEnter={e => pick(e.currentTarget.closest(".grid").parentElement, x.sym)}>
+            <div className="top"><span className="s">{x.sym}</span><span className={"c num " + (x.ch >= 0 ? "up" : "dn")}>{pct(x.pct)}</span></div>
+            <div className="p num">{kes(x.p)}<span className="tcap">{x.shares} sh · {Math.round(x.value).toLocaleString("en-US")}</span></div>
+            <Spark d={x.hist.slice(-22)} base={x.hist[Math.max(0, x.hist.length - 22)]} w={186} h={34} fillOp={.34} />
+          </div>))}
+        <div className="tile add" onClick={() => edit()} title="Add a stock you bought">
+          <b>+</b><span>{more ? `ADD · ${more} MORE HELD` : "ADD STOCK"}</span></div>
+      </div>
+    </div>); };
+export const render = ({ output, view, pf }, dispatch) => {
+  if (view === "NSE") loadPf(dispatch);
+  const setView = v => { try { localStorage.setItem("mk-view", v); } catch (e) {} dispatch({ type: "VIEW", view: v }); if (v === "NSE") loadPf(dispatch); };
   let q = []; try { q = JSON.parse(output); } catch (e) {}
   const by = Object.fromEntries(q.map(x => [x.sym, x])), hero = by["^IXIC"], open = nyOpen();
   // rank by market cap: the 6 biggest get tiles
@@ -995,11 +1064,13 @@ export const render = ({ output }) => {
   const moved = x => was[x.sym] == null || was[x.sym] === x.p ? "" : x.p > was[x.sym] ? "flu" : "fld";
   return (
     <div>
-      <header><span style={{ color: "#4ade80" }}>↗</span><h1>TECH MARKETS</h1>
-        <span className="sub">RANKED BY MARKET CAP</span>
-        <span className="pill" style={{ color: open ? "#4ade80" : "#ffb35c", background: open ? "rgba(74,222,128,.1)" : "rgba(255,179,92,.1)" }}>
-          ● NYSE {open ? "OPEN" : "CLOSED"}</span></header>
-      {!hero ? <div className="hero on muted">Connecting to markets…</div> : <div onMouseLeave={e => pick(e.currentTarget, "^IXIC")} onMouseMove={home}>
+      <header><span style={{ color: "#4ade80" }}>↗</span><h1>{view === "NSE" ? "MY NSE" : "TECH MARKETS"}</h1>
+        <span className="sub">{view === "NSE" ? "AFX · DELAYED" : "RANKED BY MARKET CAP"}</span>
+        {(o => <span className="pill" style={{ color: o ? "#4ade80" : "#ffb35c", background: o ? "rgba(74,222,128,.1)" : "rgba(255,179,92,.1)" }}>
+          ● {view === "NSE" ? "NSE" : "NYSE"} {o ? "OPEN" : "CLOSED"}</span>)(view === "NSE" ? nseOpen() : open)}
+        <span className="seg">{[["TECH", "TECH"], ["NSE", "MY NSE"]].map(([v, l]) => <span key={v} className={view === v ? "on" : ""} onClick={() => setView(v)}>{l}</span>)}</span></header>
+      {view === "NSE" ? <Nse pf={pf} dispatch={dispatch} /> :
+       !hero ? <div className="hero on muted">Connecting to markets…</div> : <div data-home="^IXIC" onMouseLeave={e => pick(e.currentTarget, "^IXIC")} onMouseMove={home}>
         <div className="stage">
           <HeroView x={hero} label="NASDAQ COMPOSITE · 5 DAYS" on />
           {top.map((x, i) => <HeroView key={x.sym} x={x}

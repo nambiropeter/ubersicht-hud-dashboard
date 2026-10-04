@@ -18,3 +18,5 @@ hudcursor
 .yahoo-*
 !docs/*.png
 .disk*
+portfolio.json
+.nse-*
