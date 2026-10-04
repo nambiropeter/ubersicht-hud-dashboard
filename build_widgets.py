@@ -31,6 +31,7 @@ SHARED = """
   &:hover { border-color: rgba(255,255,255,.13) }
   &.dragging { transform: scale(1.012); box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 34px 80px rgba(0,0,0,.6) }
   &.dragging header { cursor: grabbing }
+  &.snap { border-color: rgba(245,177,76,.55) }
   &::before { content:""; position:absolute; top:0; left:28px; right:28px; height:1px; pointer-events:none;
               background: linear-gradient(90deg, transparent, rgba(245,177,76,.6), transparent) }
   * { box-sizing: border-box }
@@ -110,30 +111,46 @@ THEME = [
     ("#d9b48a", "#e9c48e"), ("#a78bfa", "#b39cff"), ("#c4a1ff", "#b39cff"),
 ]
 
-HUD = """// Drag a panel by its header to move it (remembered); double-click the header to reset. Cursor light for the glass.
+HUD = """// Drag a panel by its header: it snaps to neighbouring panels, the screen margins and its home slot.
+// Released near home it glides back; double-click the header to send it home. Cursor light for the glass.
 const hud = name => el => {
   if (!el) return; const box = el.parentElement; if (!box || box.__hud) return; box.__hud = true;
-  const key = "hud-pos:" + name, anywhere = name === "clock";
-  try { const p = JSON.parse(localStorage.getItem(key)); if (p) { box.style.left = p.x + "px"; box.style.top = p.y + "px"; } } catch (e) {}
+  box.dataset.hud = name;
+  const key = "hud-pos:" + name, anywhere = name === "clock", GAP = 20, MAG = 16, HOME_R = 70;
+  const home = { x: box.offsetLeft, y: box.offsetTop };
+  const EASE = "cubic-bezier(.2,.9,.25,1.15)", BASE = "border-color .3s, box-shadow .3s, transform .3s";
+  const place = (x, y, glide) => {
+    box.style.transition = glide ? `left .45s ${EASE}, top .45s ${EASE}, ${BASE}` : BASE;
+    box.style.left = x + "px"; box.style.top = y + "px"; };
+  try { const p = JSON.parse(localStorage.getItem(key)); if (p) place(p.x, p.y, false); } catch (e) {}
   box.addEventListener("mousemove", e => { const r = box.getBoundingClientRect();
     box.style.setProperty("--mx", (e.clientX - r.left) + "px"); box.style.setProperty("--my", (e.clientY - r.top) + "px"); });
   box.addEventListener("mouseleave", () => box.style.setProperty("--mx", "-999px"));
+  const nearest = (v, cands) => { let best = v, d = MAG; for (const c of cands) { const k = Math.abs(c - v); if (k < d) { d = k; best = c; } } return best; };
   box.addEventListener("mousedown", e => {
     if (e.button !== 0 || !(anywhere || e.target.closest("header"))) return;
     e.preventDefault();
-    const sx = e.clientX, sy = e.clientY, ox = box.offsetLeft, oy = box.offsetTop;
+    const sx = e.clientX, sy = e.clientY, ox = box.offsetLeft, oy = box.offsetTop, W = box.offsetWidth, H = box.offsetHeight;
+    const xs = [32, window.innerWidth - W - 32, home.x], ys = [20, window.innerHeight - H - 20, home.y];
+    document.querySelectorAll("[data-hud]").forEach(o => { if (o === box) return;
+      const l = o.offsetLeft, t = o.offsetTop, r = l + o.offsetWidth, b = t + o.offsetHeight;
+      xs.push(l, r - W, r + GAP, l - W - GAP); ys.push(t, b - H, b + GAP, t - H - GAP); });
     window.__hudZ = (window.__hudZ || 10) + 1; box.style.zIndex = window.__hudZ; box.classList.add("dragging");
-    const snap = v => Math.round(v / 4) * 4;
     const mv = ev => {
-      box.style.left = snap(Math.max(0, Math.min(window.innerWidth - box.offsetWidth, ox + ev.clientX - sx))) + "px";
-      box.style.top = snap(Math.max(0, Math.min(window.innerHeight - 40, oy + ev.clientY - sy))) + "px"; };
-    const up = () => { document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
-      box.classList.remove("dragging");
-      if (box.offsetLeft !== ox || box.offsetTop !== oy) localStorage.setItem(key, JSON.stringify({ x: box.offsetLeft, y: box.offsetTop })); };
+      let x = ox + ev.clientX - sx, y = oy + ev.clientY - sy;
+      const nx = nearest(x, xs), ny = nearest(y, ys);
+      box.classList.toggle("snap", nx !== x || ny !== y);
+      x = Math.max(0, Math.min(window.innerWidth - W, nx)); y = Math.max(0, Math.min(window.innerHeight - 40, ny));
+      place(Math.round(x), Math.round(y), false); };
+    const up = () => {
+      document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
+      box.classList.remove("dragging", "snap");
+      if (Math.hypot(box.offsetLeft - home.x, box.offsetTop - home.y) < HOME_R) { place(home.x, home.y, true); localStorage.removeItem(key); }
+      else localStorage.setItem(key, JSON.stringify({ x: box.offsetLeft, y: box.offsetTop })); };
     document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
   });
   box.addEventListener("dblclick", e => { if (!(anywhere || e.target.closest("header"))) return;
-    localStorage.removeItem(key); box.style.left = ""; box.style.top = ""; });
+    localStorage.removeItem(key); place(home.x, home.y, true); });
 };"""
 
 # ── Stark armour HUD: amber holograms on smoked-bronze glass (blends with a warm wallpaper) ──
@@ -674,14 +691,23 @@ const CURSOR_CSS = `
   #hud-ring.grab i { border-radius:6px; border-style:solid; animation:none; transform: rotate(45deg) }
   #hud-ring.down b { left:-6px; top:-6px; width:12px; height:12px }
   @keyframes hudspin { to { transform: rotate(360deg) } }
+  #hud-links { position:fixed; left:0; top:0; width:100%; height:100%; pointer-events:none; z-index:0; overflow:visible }
+  #hud-links .l { fill:none; stroke:rgba(245,177,76,.22); stroke-width:1 }
+  #hud-links .f { fill:none; stroke:#f5b14c; stroke-width:1.4; stroke-dasharray:3 9; animation: hudflow 1.6s linear infinite;
+                  filter: drop-shadow(0 0 3px rgba(245,177,76,.9)) }
+  #hud-links circle { fill:#f5b14c; filter: drop-shadow(0 0 4px #f5b14c); animation: hudpulse 2.6s ease-in-out infinite }
+  @keyframes hudflow { to { stroke-dashoffset: -24 } }
+  @keyframes hudpulse { 50% { opacity:.35 } }
   .hud-ripple { position:fixed; width:12px; height:12px; margin:-6px 0 0 -6px; border:2px solid #3ee8ff; border-radius:50%;
                 pointer-events:none; z-index:99998; box-shadow: 0 0 10px #3ee8ff; animation: hudrip .65s ease-out forwards }
   .hud-ripple.hot { border-color:#ff4b3a; box-shadow: 0 0 10px #ff4b3a }
   @keyframes hudrip { to { transform: scale(7); opacity:0 } }
 `;
 const installCursor = () => {
+  let st = document.getElementById("hud-style");
+  if (!st) { st = document.createElement("style"); st.id = "hud-style"; document.head.appendChild(st); }
+  st.textContent = CURSOR_CSS;
   if (window.__hudCursor) return; window.__hudCursor = true;
-  const st = document.createElement("style"); st.textContent = CURSOR_CSS; document.head.appendChild(st);
   const ring = document.createElement("div"); ring.id = "hud-ring"; ring.innerHTML = "<i></i><b></b>"; document.body.appendChild(ring);
   let x = -200, y = -200, tx = -200, ty = -200, hot = false;
   document.addEventListener("mousemove", e => {
@@ -700,6 +726,50 @@ const installCursor = () => {
   const loop = () => { x += (tx - x) * 0.24; y += (ty - y) * 0.24; ring.style.transform = `translate(${x}px, ${y}px)`; requestAnimationFrame(loop); };
   loop();
 };
+const PAIRS = [["clock", "weather"], ["weather", "system"], ["system", "connections"], ["markets", "ai-wire"],
+  ["batcave", "mail"], ["mail", "movers"], ["clock", "markets"], ["weather", "markets"], ["system", "ai-wire"],
+  ["connections", "ai-wire"], ["markets", "batcave"], ["markets", "mail"], ["ai-wire", "movers"]];
+const LAYOUT_VERSION = "2";  // bump to send every panel back to its home slot once
+const installLinks = () => {
+  if (window.__hudLinks) return; window.__hudLinks = true;
+  try { if (localStorage.getItem("hud-layout") !== LAYOUT_VERSION) {
+    Object.keys(localStorage).filter(k => k.startsWith("hud-pos:")).forEach(k => localStorage.removeItem(k));
+    localStorage.setItem("hud-layout", LAYOUT_VERSION); } } catch (e) {}
+  const NS = "http://www.w3.org/2000/svg", svg = document.createElementNS(NS, "svg");
+  svg.id = "hud-links";
+  svg.style.cssText = "position:fixed;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:0;overflow:visible";
+  document.body.prepend(svg);
+  const els = PAIRS.map(() => { const g = document.createElementNS(NS, "g");
+    g.innerHTML = '<path class="l"/><path class="f"/><circle r="2.6"/><circle r="2.6"/>'; svg.appendChild(g); return g; });
+  let sig = "";
+  const link = (a, b) => {
+    const ox = Math.min(a.right, b.right) - Math.max(a.left, b.left), oy = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
+    if (oy > 24) { const [L, R] = a.left < b.left ? [a, b] : [b, a], y = (Math.max(a.top, b.top) + Math.min(a.bottom, b.bottom)) / 2;
+      return [L.right, y, R.left, y]; }
+    if (ox > 24) { const [T, B] = a.top < b.top ? [a, b] : [b, a], x = (Math.max(a.left, b.left) + Math.min(a.right, b.right)) / 2;
+      return [x, T.bottom, x, B.top]; }
+    const ac = [(a.left + a.right) / 2, (a.top + a.bottom) / 2], bc = [(b.left + b.right) / 2, (b.top + b.bottom) / 2];
+    const side = Math.abs(bc[0] - ac[0]) > Math.abs(bc[1] - ac[1]);
+    return side ? [bc[0] > ac[0] ? a.right : a.left, ac[1], bc[0] > ac[0] ? b.left : b.right, bc[1]]
+                : [ac[0], bc[1] > ac[1] ? a.bottom : a.top, bc[0], bc[1] > ac[1] ? b.top : b.bottom];
+  };
+  const tick = () => {
+    const boxes = {}; document.querySelectorAll("[data-hud]").forEach(o => { boxes[o.dataset.hud] = o.getBoundingClientRect(); });
+    const now = Object.entries(boxes).map(([k, r]) => k + (r.left | 0) + "," + (r.top | 0)).join("|");
+    if (now !== sig) { sig = now;
+      PAIRS.forEach(([p, q], i) => { const g = els[i], a = boxes[p], b = boxes[q];
+        if (!a || !b) { g.style.display = "none"; return; }
+        const [x1, y1, x2, y2] = link(a, b), len = Math.hypot(x2 - x1, y2 - y1);
+        if (len > 340 || len < 4) { g.style.display = "none"; return; }
+        g.style.display = "";
+        const straight = Math.abs(x1 - x2) < 1 || Math.abs(y1 - y2) < 1, mx = (x1 + x2) / 2;
+        const d = straight ? `M${x1} ${y1}L${x2} ${y2}` : `M${x1} ${y1}C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`;
+        g.children[0].setAttribute("d", d); g.children[1].setAttribute("d", d);
+        g.children[2].setAttribute("cx", x1); g.children[2].setAttribute("cy", y1);
+        g.children[3].setAttribute("cx", x2); g.children[3].setAttribute("cy", y2); }); }
+    requestAnimationFrame(tick); };
+  tick();
+};
 const moved = () => { try { return Object.keys(localStorage).some(k => k.startsWith("hud-pos:")); } catch (e) { return false; } };
 export const className = `
   left: 0; top: 0; width: 100%; height: 100%; pointer-events: none;
@@ -707,7 +777,7 @@ export const className = `
   circle { animation: p 2.6s ease-in-out infinite } @keyframes p { 50% { opacity:.4 } }
 `;
 const FONTS = "@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');";
-export const render = () => { installCursor(); return (
+export const render = () => { installCursor(); installLinks(); return (
   <svg width="100%" height="100%" viewBox="0 0 1470 923" preserveAspectRatio="none">
     <style>{FONTS}</style>
     {false && <g>
