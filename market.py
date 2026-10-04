@@ -7,7 +7,9 @@ from concurrent.futures import ThreadPoolExecutor
 UA = {"User-Agent": "Mozilla/5.0"}
 WATCHLIST = ["^IXIC", "SPCX", "NVDA", "AAPL", "MSFT", "GOOGL", "META", "AMZN", "TSLA", "AMD", "AVGO", "TSM"]
 NAMES = {"^IXIC": "NASDAQ", "SPCX": "SPACEX", "AVGO": "BROADCOM", "TSM": "TSMC", "PLTR": "PALANTIR", "ORCL": "ORACLE",
-         "NFLX": "NETFLIX", "ARM": "ARM", "CRM": "SALESFORCE", "MU": "MICRON", "INTC": "INTEL", "QCOM": "QUALCOMM", "ADBE": "ADOBE"}
+         "NFLX": "NETFLIX", "ARM": "ARM", "CRM": "SALESFORCE", "MU": "MICRON", "INTC": "INTEL", "QCOM": "QUALCOMM", "ADBE": "ADOBE",
+         "UBER": "UBER", "SHOP": "SHOPIFY", "PANW": "PALO ALTO", "CRWD": "CROWDSTRIKE", "NOW": "SERVICENOW", "IBM": "IBM",
+         "CSCO": "CISCO", "AMAT": "APPLIED MAT.", "SNOW": "SNOWFLAKE", "DELL": "DELL", "SPOT": "SPOTIFY", "COIN": "COINBASE"}
 FEEDS = [("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
          ("Yahoo", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC,AAPL,NVDA,TSLA&region=US&lang=en-US")]
 G, R, Y, C, D, B, X = "\033[32m", "\033[31m", "\033[33m", "\033[36m", "\033[2m", "\033[1m", "\033[0m"
@@ -47,22 +49,32 @@ def news(n):
 
 # Tech-only: NASDAQ hero, featured names, watchlist grid, then the "tech movers" list
 SPARK = ["^IXIC", "SPCX", "AVGO", "TSM", "NVDA", "AAPL", "MSFT", "GOOGL", "META", "AMZN", "TSLA", "AMD"]
-MOVERS = ["PLTR", "ORCL", "NFLX", "ARM", "CRM", "MU", "INTC", "QCOM", "ADBE"]
+# Movers pool: the top 3 gainers and losers are picked from all of these (+ the SPARK names)
+MOVERS = ["PLTR", "ORCL", "NFLX", "ARM", "CRM", "MU", "INTC", "QCOM", "ADBE",
+          "UBER", "SHOP", "PANW", "CRWD", "NOW", "IBM", "CSCO", "AMAT", "SNOW", "DELL", "SPOT", "COIN"]
 TECH_FEEDS = [("CNBC Tech", "https://www.cnbc.com/id/19854910/device/rss/rss.html"),
               ("Yahoo", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA,MSFT,GOOGL,META,AMD&region=US&lang=en-US")]
+# Headlines about job losses get flagged as alerts (shown in red and pinned to the top of the wire)
+ALERT_RE = re.compile(r"\b(lay ?offs?|laid off|laying off|lays off|job cuts?|workforce reduction|redundanc(y|ies)|"
+                      r"downsiz(e|es|ing)|hiring freeze|reduc(e|es|ing) (its )?(workforce|headcount)|"
+                      r"(cut|cuts|cutting|slash\w*|eliminat\w*|shed\w*) ((?!(rates?|prices?|costs?|as|and|after|but|while)\b)[\w,.%-]+ ){0,3}"
+                      r"(jobs|roles|positions|workers|employees|staff))\b", re.I)
 AI_WORDS = ("ai", "a.i.", "openai", "anthropic", "nvidia", "chip", "gpu", "llm", "model", "robot", "data center", "agent")
 
 def spark(sym):
     """Price, day change and a 5-day hourly sparkline for one symbol."""
     try:
         r = json.loads(get(f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?range=5d&interval=1h"))["chart"]["result"][0]
-        m = r["meta"]; closes = [c for c in r["indicators"]["quote"][0]["close"] if c is not None]
+        m = r["meta"]
+        pts = [(t, c) for t, c in zip(r["timestamp"], r["indicators"]["quote"][0]["close"]) if c is not None][-40:]
+        closes = [c for _, c in pts]
         price, prev = m["regularMarketPrice"], m.get("previousClose") or m.get("chartPreviousClose")
         ch = m.get("regularMarketChangePercent")
         if ch is None and prev: ch = (price - prev) / prev * 100
         return {"sym": sym, "name": NAMES.get(sym, sym), "p": price, "c": ch or 0.0,
                 "hi": m.get("regularMarketDayHigh"), "lo": m.get("regularMarketDayLow"),
-                "spark": [round(c, 2) for c in closes[-40:]]}
+                "spark": [round(c, 2) for c in closes], "ts": [t for t, _ in pts],
+                "prev": prev}  # previous close: the chart baseline and what the day % is measured against
     except Exception:
         return None
 
@@ -72,6 +84,7 @@ def feed(feeds, n, ai_first=False):
         try: out += [{"src": src, "t": it.findtext("title").strip(), "l": it.findtext("link"), "d": it.findtext("pubDate")}
                      for _, it in zip(range(n), ET.fromstring(get(url)).iter("item"))]
         except Exception: pass
+    for h in out: h["alert"] = bool(ALERT_RE.search(h["t"]))
     if ai_first:
         for h in out: h["ai"] = bool(re.search(r"\b(" + "|".join(map(re.escape, AI_WORDS)) + r")\b", h["t"].lower()))
     from email.utils import parsedate_to_datetime
@@ -97,8 +110,8 @@ def market_caps(syms):
 
 def as_json(kind):
     if kind in ("quotes", "movers"):
-        syms = SPARK if kind == "quotes" else MOVERS
-        with ThreadPoolExecutor(13) as ex:
+        syms = SPARK if kind == "quotes" else MOVERS + [x for x in SPARK if x != "^IXIC" and x not in MOVERS]
+        with ThreadPoolExecutor(16) as ex:
             caps = ex.submit(market_caps, syms)
             data = [q for q in ex.map(spark, syms) if q]
         for q in data: q["cap"] = caps.result().get(q["sym"])

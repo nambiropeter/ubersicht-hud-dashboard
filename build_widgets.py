@@ -54,21 +54,97 @@ AGO = """const ago = d => {
   return isNaN(m) ? "" : m < 60 ? `${m}m` : m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
 };"""
 
-SPARK = """let _sid = 0;
-const Spark = ({ d, w, h, up, fill = true, sw = 1.6 }) => {
+SPARK = """// Price chart: smooth line split green/red at the previous close (the hairline baseline), soft wash to the
+// baseline, ringed end dot. With `axis`: day dividers + labels, right-hand price ticks, hover crosshair + tooltip.
+// ids must be unique across ALL panels (they share one page), so prefix them per widget load
+let _sid = 0; const _pfx = "s" + Math.random().toString(36).slice(2, 7);
+const UP = "#4ade80", DN = "#f87171", SURF = "#16120f";
+const smooth = P => {  // monotone cubic (Fritsch–Carlson): smooth, never overshoots the real highs/lows
+  const n = P.length; if (n < 3) return "M" + P.map(p => p.join(" ")).join("L");
+  const m = [], t = [];
+  for (let i = 0; i < n - 1; i++) m[i] = (P[i + 1][1] - P[i][1]) / (P[i + 1][0] - P[i][0]);
+  t[0] = m[0]; t[n - 1] = m[n - 2];
+  for (let i = 1; i < n - 1; i++) t[i] = m[i - 1] * m[i] <= 0 ? 0 : (m[i - 1] + m[i]) / 2;
+  for (let i = 0; i < n - 1; i++) {
+    if (!m[i]) { t[i] = t[i + 1] = 0; continue; }
+    const a = t[i] / m[i], b = t[i + 1] / m[i], q = a * a + b * b;
+    if (q > 9) { const k = 3 / Math.sqrt(q); t[i] = k * a * m[i]; t[i + 1] = k * b * m[i]; }
+  }
+  let d = `M${P[0][0].toFixed(1)} ${P[0][1].toFixed(1)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const h = (P[i + 1][0] - P[i][0]) / 3;
+    d += `C${(P[i][0] + h).toFixed(1)} ${(P[i][1] + t[i] * h).toFixed(1)} ${(P[i + 1][0] - h).toFixed(1)} ${(P[i + 1][1] - t[i + 1] * h).toFixed(1)} ${P[i + 1][0].toFixed(1)} ${P[i + 1][1].toFixed(1)}`;
+  }
+  return d;
+};
+const niceTicks = (lo, hi, n = 3) => {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const step = [1, 2, 2.5, 5, 10].map(k => k * mag).find(k => k >= raw);
+  const out = []; for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) out.push(v);
+  return out;
+};
+const tickFmt = v => v >= 1000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(v >= 100 ? 0 : 2);
+const etDay = t => new Date(t * 1000).toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "short" });
+const etTime = t => new Date(t * 1000).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" });
+const Spark = ({ d, w, h, up, base, ts, axis = false, fill = true, sw = 1.6 }) => {
   if (!d || d.length < 2) return <svg width={w} height={h} />;
-  const mn = Math.min(...d), mx = Math.max(...d), r = (mx - mn) || 1;
-  const pts = d.map((v, i) => [(i / (d.length - 1)) * w, h - 3 - ((v - mn) / r) * (h - 6)]);
-  const line = pts.map((p, i) => (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-  const col = up ? "#4ade80" : "#f87171", id = "g" + (++_sid);
+  const id = _pfx + (++_sid), padR = axis ? 46 : 5, padB = axis ? 18 : 0, cw = w - padR, ch = h - padB;
+  const ref = base != null ? base : d[0];
+  let mn = Math.min(...d, ref), mx = Math.max(...d, ref); const pad = (mx - mn || 1) * 0.1; mn -= pad; mx += pad;
+  const X = i => 2 + (i / (d.length - 1)) * (cw - 4), Y = v => 3 + (1 - (v - mn) / (mx - mn)) * (ch - 6);
+  const P = d.map((v, i) => [X(i), Y(v)]), line = smooth(P), by = Y(ref), last = P[P.length - 1];
+  const endCol = d[d.length - 1] >= ref ? UP : DN;
+  const area = `${line}L${last[0].toFixed(1)} ${by.toFixed(1)}L${P[0][0].toFixed(1)} ${by.toFixed(1)}Z`;
+  // day dividers (hourly data spans several sessions)
+  const days = [];
+  if (axis && ts) ts.forEach((t, i) => { if (!i || etDay(t) !== etDay(ts[i - 1])) days.push(i); });
+  const move = e => {
+    const svg = e.currentTarget.ownerSVGElement, r = svg.getBoundingClientRect();
+    const i = Math.max(0, Math.min(d.length - 1, Math.round(((e.clientX - r.left - 2) / (cw - 4)) * (d.length - 1))));
+    const g = svg.querySelector(".xh"), [x, y] = P[i], ch_ = (d[i] - ref) / ref * 100;
+    g.style.opacity = 1;
+    g.querySelector("line").setAttribute("x1", x); g.querySelector("line").setAttribute("x2", x);
+    const dot = g.querySelector("circle"); dot.setAttribute("cx", x); dot.setAttribute("cy", y); dot.setAttribute("fill", d[i] >= ref ? UP : DN);
+    const v = g.querySelector(".tv"), s = g.querySelector(".ts"), bx = g.querySelector("rect");
+    v.textContent = tickFmt(d[i]) === String(d[i]) ? String(d[i]) : d[i].toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    s.textContent = (ch_ >= 0 ? "+" : "") + ch_.toFixed(2) + "% vs prev close" + (ts ? " · " + etTime(ts[i]) + " ET" : "");
+    const tw = Math.max(v.getComputedTextLength(), s.getComputedTextLength()) + 20, tx = Math.min(Math.max(x - tw / 2, 0), cw - tw);
+    bx.setAttribute("x", tx); bx.setAttribute("width", tw); v.setAttribute("x", tx + 10); s.setAttribute("x", tx + 10);
+  };
+  const leave = e => { e.currentTarget.ownerSVGElement.querySelector(".xh").style.opacity = 0; };
   return (
     <svg width={w} height={h} style={{ display: "block", overflow: "visible" }}>
-      <defs><linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stopColor={col} stopOpacity=".28" /><stop offset="1" stopColor={col} stopOpacity="0" />
-      </linearGradient></defs>
-      {fill && <path d={`${line} L ${w} ${h} L 0 ${h} Z`} fill={`url(#${id})`} />}
-      <path d={line} fill="none" stroke={col} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" />
-      <circle cx={pts[pts.length - 1][0]} cy={pts[pts.length - 1][1]} r="2.6" fill={col} />
+      <defs>
+        <clipPath id={id + "a"}><rect x="-10" y="-10" width={w + 20} height={by + 10} /></clipPath>
+        <clipPath id={id + "b"}><rect x="-10" y={by} width={w + 20} height={h + 10} /></clipPath>
+        <linearGradient id={id + "u"} gradientUnits="userSpaceOnUse" x1="0" y1={Y(mx)} x2="0" y2={by}>
+          <stop offset="0" stopColor={UP} stopOpacity=".26" /><stop offset="1" stopColor={UP} stopOpacity=".02" /></linearGradient>
+        <linearGradient id={id + "d"} gradientUnits="userSpaceOnUse" x1="0" y1={by} x2="0" y2={Y(mn)}>
+          <stop offset="0" stopColor={DN} stopOpacity=".02" /><stop offset="1" stopColor={DN} stopOpacity=".26" /></linearGradient>
+      </defs>
+      {axis && niceTicks(mn, mx).map(v => <g key={v}>
+        <line x1="0" x2={cw} y1={Y(v)} y2={Y(v)} stroke="rgba(255,255,255,.05)" />
+        <text x={w} y={Y(v) + 3.5} textAnchor="end" fill="#6f665f" fontSize="10" className="num">{tickFmt(v)}</text></g>)}
+      {days.map((i, k) => <g key={i}>
+        {k > 0 && <line x1={X(i) - 2} x2={X(i) - 2} y1="0" y2={ch} stroke="rgba(255,255,255,.06)" />}
+        <text x={(X(i) + (k + 1 < days.length ? X(days[k + 1]) : cw)) / 2} y={h - 3} textAnchor="middle" fill="#6f665f" fontSize="9.5" letterSpacing=".12em">{etDay(ts[i]).toUpperCase()}</text></g>)}
+      {fill && <path d={area} fill={`url(#${id}u)`} clipPath={`url(#${id}a)`} />}
+      {fill && <path d={area} fill={`url(#${id}d)`} clipPath={`url(#${id}b)`} />}
+      <line x1="0" x2={cw} y1={by} y2={by} stroke="rgba(255,255,255,.2)" strokeWidth="1" />
+      {axis && <text x={w} y={by + 3.5} textAnchor="end" fill="#a39a92" fontSize="10" fontWeight="600" className="num">{tickFmt(ref)}</text>}
+      <path d={line} fill="none" stroke={UP} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" clipPath={`url(#${id}a)`} />
+      <path d={line} fill="none" stroke={DN} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" clipPath={`url(#${id}b)`} />
+      {axis && <circle cx={last[0]} cy={last[1]} r="9" fill={endCol} opacity=".18" className="pulse" />}
+      {axis ? <circle cx={last[0]} cy={last[1]} r="4" fill={endCol} stroke={SURF} strokeOpacity=".6" strokeWidth="2" />
+        : <circle cx={last[0]} cy={last[1]} r="2.4" fill={endCol} style={{ filter: `drop-shadow(0 0 3px ${endCol})` }} />}
+      {axis && <g className="xh" style={{ opacity: 0, pointerEvents: "none", transition: "opacity .15s" }}>
+        <line y1="0" y2={ch} stroke="rgba(255,255,255,.35)" />
+        <circle r="4.5" stroke={SURF} strokeWidth="2" />
+        <rect y="-44" height="38" rx="8" fill="rgba(24,20,17,.96)" stroke="rgba(255,255,255,.1)" />
+        <text className="tv num" y="-26" fill="#ffffff" fontSize="13" fontWeight="600" />
+        <text className="ts" y="-12" fill="#a39a92" fontSize="10" />
+      </g>}
+      {axis && <rect x="0" y="0" width={cw} height={ch} fill="transparent" onMouseMove={move} onMouseLeave={leave} />}
     </svg>
   );
 };"""
@@ -441,7 +517,7 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── MARKETS ─────────────────────────
-widget("markets", r'''// Tech markets: NASDAQ hero chart, featured names and watchlist with 5-day sparklines. Edit symbols in ~/.stark/market.py (SPARK).
+widget("markets", r'''// Tech markets: NASDAQ hero chart + the 6 biggest tech names by market cap, with 5-day charts. Edit symbols in ~/.stark/market.py (SPARK).
 import { run } from "uebersicht";
 export const command = "%%PY%% ~/.stark/market.py json quotes";
 export const refreshFrequency = 5 * 60 * 1000;
@@ -455,9 +531,11 @@ export const className = `
   .hc { font-size:15px; font-weight:500; padding-bottom:5px }
   .range { margin-left:auto; text-align:right; font-size:10.5px; color:#a39a92; line-height:1.6; padding-bottom:4px }
   .range b { color:#e6dcd2; font-weight:500 }
-  .chart { margin-top:10px }
+  .chart { margin-top:8px }
+  .pulse { transform-box: fill-box; transform-origin: center; animation: pulse 2.4s ease-out infinite }
+  @keyframes pulse { 0% { transform: scale(.5); opacity:.45 } 100% { transform: scale(1.6); opacity:0 } }
   .idx { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:14px 16px 0 }
-  .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; padding:10px 16px 0 }
+  .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:12px 16px 0 }
   .tile { background:rgba(255,214,170,.035); border:1px solid rgba(255,214,170,.05); border-radius:14px; padding:10px 12px; cursor:pointer; transition: all .25s; position:relative }
   .tile:hover { background:rgba(255,255,255,.07); border-color: rgba(255,255,255,.14) }
   .tile .top { display:flex; justify-content:space-between; align-items:baseline }
@@ -486,7 +564,7 @@ export const render = ({ output }) => {
   const by = Object.fromEntries(q.map(x => [x.sym, x])), hero = by["^IXIC"], open = nyOpen();
   // rank by market cap: top 3 featured, next 8 in the grid
   const ranked = q.filter(x => x.sym !== "^IXIC").sort((a, b) => (b.cap || 0) - (a.cap || 0));
-  const idx = ranked.slice(0, 3), watch = ranked.slice(3, 11);
+  const top = ranked.slice(0, 6);
   return (
     <div>
       <header><span style={{ color: "#4ade80" }}>↗</span><h1>TECH MARKETS</h1>
@@ -501,22 +579,15 @@ export const render = ({ output }) => {
             <div className={"hc num " + (hero.c >= 0 ? "up" : "dn")}>{pct(hero.c)}</div>
             <div className="range num">Day high <b>{fmt(hero.hi)}</b><br />Day low <b>{fmt(hero.lo)}</b></div>
           </div>
-          <div className="chart"><Spark d={hero.spark} w={650} h={136} up={hero.c >= 0} sw={2} /></div>
-        </div>
-        <div className="idx">
-          {idx.map((x, i) => (
-            <div className="tile" key={x.sym} onClick={() => yahoo(x.sym)}>
-              <div style={{ flex: 1 }}><div className="s"><em className="rk">#{i + 1}</em>{x.name}<span className="cap">{cap(x.cap)}</span></div><div className="p num">{fmt(x.p)}</div>
-                <div className={"c num " + (x.c >= 0 ? "up" : "dn")}>{pct(x.c)}</div></div>
-              <Spark d={x.spark} w={64} h={36} up={x.c >= 0} />
-            </div>))}
+          <div className="chart"><Spark d={hero.spark} ts={hero.ts} base={hero.prev} w={650} h={206} sw={2} axis /></div>
         </div>
         <div className="grid">
-          {watch.map((x, i) => (
+          {top.map((x, i) => (
             <div className="tile" key={x.sym} onClick={() => yahoo(x.sym)}>
-              <div className="top"><span className="s"><em className="rk">#{i + 4}</em>{x.sym}</span><span className={"c num " + (x.c >= 0 ? "up" : "dn")}>{pct(x.c)}</span></div>
+              <div className="top"><span className="s"><em className="rk">#{i + 1}</em>{x.sym}</span>
+                <span className={"c num " + (x.c >= 0 ? "up" : "dn")}>{pct(x.c)}</span></div>
               <div className="p num">{fmt(x.p)}<span className="tcap">{cap(x.cap)}</span></div>
-              <Spark d={x.spark} w={128} h={30} up={x.c >= 0} />
+              <Spark d={x.spark} base={x.prev} w={186} h={34} />
             </div>))}
         </div>
       </div>}
@@ -584,7 +655,7 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── AI & TECH WIRE ─────────────────────────
-widget("ai-wire", r'''// AI & tech headlines, newest first (AI stories tagged). Click to open.
+widget("ai-wire", r'''// AI & tech headlines, newest first (AI stories tagged, layoff news flagged red and pinned). Click to open.
 import { run } from "uebersicht";
 export const command = "%%PY%% ~/.stark/market.py json tech";
 export const refreshFrequency = 15 * 60 * 1000;
@@ -597,18 +668,27 @@ export const className = `
   .src { flex:none; width:66px; font-size:9px; font-weight:700; letter-spacing:.08em; color:#8c8178 }
   .t { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#e6dcd2; font-size:12.5px }
   .a { flex:none; width:30px; text-align:right; font-size:10.5px; color:#6f665f }
+  /* layoff / job-cut headlines: pure red warning row, pinned to the top */
+  .row.alert { background:rgba(255,59,48,.16); box-shadow: inset 3px 0 0 #ff3b30; animation: alertGlow 2.6s ease-in-out infinite }
+  .row.alert:hover { background:rgba(255,59,48,.26) }
+  .row.alert .t, .row.alert:hover .t { color:#ff453a; font-weight:700 }
+  .row.alert .src, .row.alert .a { color:#ff8a80 }
+  .row.alert .tag { width:auto; padding:2px 6px; color:#fff; background:#ff3b30 }
+  @keyframes alertGlow { 50% { background:rgba(255,59,48,.24) } }
+  .alertsub { color:#ff453a; font-weight:700; margin-right:8px }
 `;
 %%AGO%%
 export const render = ({ output }) => {
   let n = []; try { n = JSON.parse(output); } catch (e) {}
-  n.sort((a, b) => new Date(b.d) - new Date(a.d));  // latest first
+  n.sort((a, b) => (b.alert - a.alert) || (new Date(b.d) - new Date(a.d)));  // layoff alerts first, then latest
+  const alerts = n.filter(h => h.alert).length;
   return (
     <div>
-      <header><span style={{ color: "#7fdcff" }}>✦</span><h1>AI &amp; TECH WIRE</h1><span className="sub">CNBC TECH · YAHOO · J.A.R.V.I.S. <b style={{ color: "#7fdcff" }}>BRIEFING</b></span></header>
+      <header><span style={{ color: "#7fdcff" }}>✦</span><h1>AI &amp; TECH WIRE</h1><span className="sub">{alerts > 0 && <span className="alertsub">⚠ {alerts} LAYOFF ALERT{alerts > 1 ? "S" : ""}</span>}CNBC TECH · YAHOO · J.A.R.V.I.S. <b style={{ color: "#7fdcff" }}>BRIEFING</b></span></header>
       <div className="list">
         {n.slice(0, 8).map(h => (
-          <div className="row" key={h.l} onClick={() => run(`open "${h.l}"`)}>
-            <span className="tag" style={h.ai ? { color: "#7fdcff", background: "rgba(127,220,255,.12)" } : { color: "#6f665f", background: "rgba(255,214,170,.05)" }}>{h.ai ? "AI" : "TECH"}</span>
+          <div className={"row" + (h.alert ? " alert" : "")} key={h.l} onClick={() => run(`open "${h.l}"`)}>
+            {h.alert ? <span className="tag">⚠ LAYOFFS</span> : <span className="tag" style={h.ai ? { color: "#7fdcff", background: "rgba(127,220,255,.12)" } : { color: "#6f665f", background: "rgba(255,214,170,.05)" }}>{h.ai ? "AI" : "TECH"}</span>}
             <span className="src">{h.src.toUpperCase()}</span>
             <span className="t">{h.t}</span><span className="a num">{ago(h.d)}</span>
           </div>))}
@@ -618,14 +698,17 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── TECH MOVERS ─────────────────────────
-widget("movers", r'''// More tech stocks, ranked by today's move. Edit the list in ~/.stark/market.py (MOVERS).
+widget("movers", r'''// Today's top 3 gainers and top 3 losers across the tech pool. Edit the pool in ~/.stark/market.py (MOVERS).
 import { run } from "uebersicht";
 export const command = "%%PY%% ~/.stark/market.py json movers";
 export const refreshFrequency = 5 * 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
   .list { padding:5px 8px }
-  .row { display:grid; grid-template-columns: 1fr 64px 66px 62px; align-items:center; gap:8px; height:26px; padding:0 9px; border-radius:8px; cursor:pointer }
+  .row { display:grid; grid-template-columns: 1fr 64px 66px 62px; align-items:center; gap:8px; height:31px; padding:0 9px; border-radius:8px; cursor:pointer }
+  .grp { display:flex; align-items:center; gap:8px; padding:6px 9px 2px; font-size:9px; font-weight:700; letter-spacing:.14em }
+  .grp i { flex:1; height:1px; background:rgba(255,255,255,.06) }
+  .none { padding:6px 9px; font-size:11px; color:#6f665f }
   .row:hover { background:rgba(255,179,92,.08) }
   .s { font-size:11.5px; font-weight:700; letter-spacing:.04em; color:#e6dcd2 }
   .s small { display:block; font-size:8.5px; font-weight:600; letter-spacing:.1em; color:#6f665f; margin-top:-1px }
@@ -636,19 +719,24 @@ export const className = `
 %%SPARK%%
 export const render = ({ output }) => {
   let q = []; try { q = JSON.parse(output); } catch (e) {}
-  q.sort((a, b) => b.c - a.c);
+  const gain = q.filter(x => x.c > 0).sort((a, b) => b.c - a.c).slice(0, 3);
+  const lose = q.filter(x => x.c < 0).sort((a, b) => a.c - b.c).slice(0, 3);
   const up = q.filter(x => x.c >= 0).length;
+  const Row = x => (
+    <div className="row" key={x.sym} onClick={() => run(`open "https://finance.yahoo.com/quote/${x.sym}"`)}>
+      <span className="s">{x.sym}{x.name !== x.sym && <small>{x.name}</small>}</span>
+      <Spark d={x.spark} base={x.prev} w={64} h={18} fill={false} sw={1.4} />
+      <span className="p num">{fmt(x.p)}</span>
+      <span className={"c num " + (x.c >= 0 ? "up" : "dn")} style={{ background: x.c >= 0 ? "rgba(74,222,128,.08)" : "rgba(248,113,113,.08)" }}>{x.c >= 0 ? "+" : ""}{x.c.toFixed(2)}%</span>
+    </div>);
   return (
     <div>
-      <header><span style={{ color: "#4ade80" }}>⇅</span><h1>TECH MOVERS</h1><span className="sub"><b style={{ color: "#4ade80" }}>{up}</b> UP · <b style={{ color: "#f87171" }}>{q.length - up}</b> DOWN</span></header>
+      <header><span style={{ color: "#4ade80" }}>⇅</span><h1>TECH MOVERS</h1><span className="sub"><b style={{ color: "#4ade80" }}>{up}</b> UP · <b style={{ color: "#f87171" }}>{q.length - up}</b> DOWN · OF {q.length}</span></header>
       <div className="list">
-        {q.slice(0, 9).map(x => (
-          <div className="row" key={x.sym} onClick={() => run(`open "https://finance.yahoo.com/quote/${x.sym}"`)}>
-            <span className="s">{x.sym}{x.name !== x.sym && <small>{x.name}</small>}</span>
-            <Spark d={x.spark} w={64} h={18} up={x.c >= 0} fill={false} sw={1.3} />
-            <span className="p num">{fmt(x.p)}</span>
-            <span className={"c num " + (x.c >= 0 ? "up" : "dn")} style={{ background: x.c >= 0 ? "rgba(74,222,128,.08)" : "rgba(248,113,113,.08)" }}>{x.c >= 0 ? "+" : ""}{x.c.toFixed(2)}%</span>
-          </div>))}
+        <div className="grp up">▲ TOP GAINERS<i /></div>
+        {gain.length ? gain.map(Row) : <div className="none">Nothing up today</div>}
+        <div className="grp dn">▼ TOP LOSERS<i /></div>
+        {lose.length ? lose.map(Row) : <div className="none">Nothing down today</div>}
       </div>
     </div>
   );
