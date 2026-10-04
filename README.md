@@ -4,6 +4,8 @@ A macOS desktop dashboard built on [Übersicht](https://tracesof.net/uebersicht/
 
 Everything is plain scripts: no API keys, no paid services, no AI calls.
 
+![The full dashboard](docs/dashboard.png)
+
 **Look and feel:** refined dark "liquid glass" panels (frosted, translucent, a soft light that follows the cursor), thin SF numerals, small Orbitron titles, one amber accent with an amber hairline across the top of each panel. `wallpaper_glass.py` generates the matching dark wallpaper. Over the widgets the cursor becomes a crosshair with a trailing targeting ring and click ripples.
 
 **Interactive:** the panels are chained in place. Pull one by its header (or the clock from anywhere) and its chains stretch; let go and it springs back home. Click stocks, headlines, projects or emails to open them.
@@ -21,6 +23,21 @@ Everything is plain scripts: no API keys, no paid services, no AI calls.
 | Batcave | Git projects in `~/Documents/GitHub` and `~/Developer` | `git` | 1 min |
 | Mail | Unread Primary emails, Gmail / iCloud tabs | Gmail IMAP + Mail.app (AppleScript) | 30 s |
 | Tech Movers | More tech stocks ranked by today's move | Yahoo Finance | 5 min |
+
+### What each widget looks like
+
+| | |
+|---|---|
+| ![Clock](docs/clock.png) **Clock**: local time and date with New York, London and Tokyo, each showing when its stock market opens or closes. | ![Weather](docs/weather.png) **Weather**: current conditions, feels‑like, humidity, wind, UV, sunrise/sunset and a 5‑day forecast with rain chance bars. |
+| ![System](docs/system.png) **System**: CPU, memory, disk and battery rings that turn amber above 65% and red above 85% (battery red under 20%, ⚡ while charging), plus uptime, process count and free disk. | ![Connections](docs/connections-healthy.png) **Connections**: live health of 8 services around a HUB, plus download and upload speed. See [Connections widget](#connections-widget) for every state. |
+| ![Batcave](docs/batcave.png) **Batcave**: your git projects, most recently committed first, with branch, uncommitted changes (✎) and the age of the last commit. Click one to open it in VS Code. | ![Mail](docs/mail.png) **Mail**: unread mail from Gmail's Primary tab and iCloud, in tabs. Click an email to open it in Mail. |
+| ![Tech Movers](docs/movers.png) **Tech Movers**: the day's biggest tech gainers and losers with sparklines of the last few trading days. | ![AI & Tech Wire](docs/ai-wire.png) **AI & Tech Wire**: the top 5 tech headlines, AI stories ranked first. Click to read. |
+
+![Tech Markets](docs/markets.png)
+**Tech Markets**: the NASDAQ Composite over 5 days (hover for any point) and the biggest tech stocks ranked by market cap, with NYSE open/closed status.
+
+Each data panel shows a red badge in its header if its data fails or stops updating (for example *No internet*).
+Screenshots use placeholder projects and emails; everything else is live data.
 
 A launchd agent tells Mail.app to sync every 10 minutes and whenever the network changes (`mail-sync.sh`).
 
@@ -120,7 +137,7 @@ mail.sh            unread Primary mail from Mail.app
 mail_direct.py     Gmail Primary + iCloud over IMAP (app passwords from Keychain)
 mail-sync.sh       syncs Mail.app accounts (run by launchd)
 launchd/           background agents (mail sync timer + network change, pointer hider)
-docs/              screenshots
+docs/              README screenshots
 stark.zsh          terminal theme
 dashboard.html     browser market dashboard (TradingView widgets)
 wallpaper.py       generates the bat-signal × arc-reactor wallpaper
