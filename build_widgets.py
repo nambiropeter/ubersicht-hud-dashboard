@@ -285,21 +285,9 @@ WARM = [
     ("#6fe8ff", "#7cc8ff"), ("#b388ff", "#b39cff"),
 ]
 
-# ── HUD cursor: amber crosshair everywhere (the animated ring rides on top) ──
-# Real PNG files served from the widgets folder: Übersicht's WebKit doesn't draw SVG data-URL cursors reliably
-# (Chrome does), and a bare // inside className CSS would start a comment anyway.
-def _cursor_png(path, color, size):
-    from PIL import Image, ImageDraw
-    k = 8; S = size * k; c = S / 2; img = Image.new("RGBA", (S, S)); d = ImageDraw.Draw(img); lw = round(1.6 * S / 28)
-    r = 5.5 * S / 28; d.ellipse([c - r, c - r, c + r, c + r], outline=color, width=lw)
-    for a, b in ((1, 7), (21, 27)):
-        a, b = a * S / 28, b * S / 28
-        d.line([c, a, c, b], fill=color, width=lw); d.line([a, c, b, c], fill=color, width=lw)
-    r = 1.6 * S / 28; d.ellipse([c - r, c - r, c + r, c + r], fill=color)
-    img.resize((size, size), Image.LANCZOS).save(path)
-_cursor_png(os.path.join(W, "hud-cursor.png"), "#f5b14c", 28)
-_cursor_png(os.path.join(W, "hud-cursor@2x.png"), "#f5b14c", 56)
-CURSOR = '-webkit-image-set(url("hud-cursor.png") 1x, url("hud-cursor@2x.png") 2x) 14 14, crosshair'
+# ── HUD cursor: the system pointer is hidden over panels and aa-links draws the amber aimer + spinning ring
+# itself (Übersicht's WebKit ignores image cursors; CSS can't be trusted to draw it).
+CURSOR = "none"
 
 NET = {"weather", "markets", "ai-wire", "movers", "mail", "connections"}  # panels that need the internet
 
@@ -943,6 +931,8 @@ widget("aa-links", '''// Glowing connectors between panels (file name sorts firs
 export const command = "true";
 export const refreshFrequency = 2000;
 const CURSOR_CSS = `
+  #hud-aim { position:fixed; left:-14px; top:-14px; width:28px; height:28px; pointer-events:none; z-index:100000; display:none }
+  #hud-aim.on { display:block }
   #hud-ring { position:fixed; left:0; top:0; width:0; height:0; pointer-events:none; z-index:99999; opacity:0; transition:opacity .25s }
   #hud-ring.on { opacity:1 }
   #hud-ring i, #hud-ring b { position:absolute; border-radius:50%; transition: all .22s ease }
@@ -977,17 +967,22 @@ const installCursor = () => {
   st.textContent = CURSOR_CSS;
   if (window.__hudCursor === "%%BUILD%%") return; window.__hudCursor = "%%BUILD%%";
   if (window.__hudCursorOff) window.__hudCursorOff.abort(); const off = new AbortController(), on = { signal: off.signal };
-  window.__hudCursorOff = off; document.querySelectorAll("#hud-ring").forEach(n => n.remove());
+  window.__hudCursorOff = off; document.querySelectorAll("#hud-ring, #hud-aim").forEach(n => n.remove());
+  const aim = document.createElement("div"); aim.id = "hud-aim";
+  aim.innerHTML = '<svg width="28" height="28" viewBox="0 0 28 28"><g fill="none" stroke="#f5b14c" stroke-width="1.6"><circle cx="14" cy="14" r="5.5"/>' +
+    '<path d="M14 1v6M14 21v6M1 14h6M21 14h6"/></g><circle cx="14" cy="14" r="1.6" fill="#f5b14c"/></svg>';
+  document.body.appendChild(aim);
   const ring = document.createElement("div"); ring.id = "hud-ring"; ring.innerHTML = "<i></i><b></b>"; document.body.appendChild(ring);
   let x = -200, y = -200, tx = -200, ty = -200, hot = false;
   document.addEventListener("mousemove", e => {
     tx = e.clientX; ty = e.clientY; ring.classList.add("on");
+    aim.style.transform = `translate(${tx}px, ${ty}px)`; aim.classList.toggle("on", !!(e.target.closest && e.target.closest(".widget")));
     const t = e.target.closest ? e.target.closest(".row,.tile,.it,.hero,header") : null;
     hot = !!t && !t.matches("header");
     ring.classList.toggle("hot", hot); ring.classList.toggle("grab", !!t && t.matches("header"));
   }, on);
 
-  document.addEventListener("mouseout", e => { if (!e.relatedTarget) ring.classList.remove("on"); }, on);
+  document.addEventListener("mouseout", e => { if (!e.relatedTarget) { ring.classList.remove("on"); aim.classList.remove("on"); } }, on);
   document.addEventListener("mousedown", e => {
     ring.classList.add("down");
     const r = document.createElement("div"); r.className = "hud-ripple" + (hot ? " hot" : "");
