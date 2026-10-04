@@ -476,28 +476,47 @@ const loadOf = s => Math.round(Math.max(0, Math.min(100,
   .45 * s.cpu + .25 * s.mem + .2 * (s.charging ? 25 : 100 - s.batt) + .1 * s.disk)));
 // Revolutions per second: lazy 0.25 at idle, a blur at 3.5 flat out (exponential, so every step is visible).
 const rps = load => 0.25 * Math.pow(14, load / 100);
-// The rotor keeps spinning across refreshes; a new target speed ramps in over ~1.5 s instead of jumping.
+// The rotor keeps spinning across refreshes; a new target speed ramps in (eased) instead of jumping.
+// The number in the hub follows the rotor, so it reads the fan's real speed (0-100) while it ramps.
+const level = rate => Math.round(Math.max(0, Math.min(100, 100 * Math.log(rate / 0.25) / Math.log(14))));
+const ramp = (el, to, ms) => {
+  const anim = el.__spin, from = anim.playbackRate, t0 = performance.now();
+  const num = el.parentElement && el.parentElement.querySelector("b.num");
+  clearInterval(el.__ramp);
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / ms), e = 1 - Math.pow(1 - k, 3);
+    anim.playbackRate = from + (to - from) * e;
+    if (num) num.textContent = level(anim.playbackRate);
+    if (k >= 1) clearInterval(el.__ramp);
+  };
+  step(); el.__ramp = setInterval(step, 30);
+};
+const target = el => rps(Math.min(100, el.__load + (el.__boost || 0)));
 const spin = load => el => {
   if (!el) return;
+  el.__load = load;
   if (!el.__spin || el.__spin.playState === "idle") {
     el.getAnimations().forEach(a => a.cancel());
     el.__spin = el.animate([{ transform: "rotate(0deg)" }, { transform: "rotate(360deg)" }], { duration: 1000, iterations: Infinity });
-    el.__spin.playbackRate = rps(load);
+    el.__spin.playbackRate = target(el);
   }
-  const anim = el.__spin, from = anim.playbackRate, to = rps(load), t0 = performance.now();
-  clearInterval(el.__ramp);
-  el.__ramp = setInterval(() => {
-    const k = Math.min(1, (performance.now() - t0) / 1500), e = 1 - Math.pow(1 - k, 3);
-    anim.playbackRate = from + (to - from) * e;
-    if (k >= 1) clearInterval(el.__ramp);
-  }, 50);
+  ramp(el, target(el), 1500);
+};
+// Click the fan to rev it: each click adds 25 to its speed (up to 100), then it winds back down 3 s after the last click.
+const rev = e => {
+  const el = e.currentTarget.querySelector(".rot");
+  if (!el || !el.__spin) return;
+  el.__boost = Math.min(100 - el.__load, (el.__boost || 0) + 25);
+  ramp(el, target(el), 350);
+  clearTimeout(el.__cool);
+  el.__cool = setTimeout(() => { el.__boost = 0; ramp(el, target(el), 2500); }, 3000);
 };
 const Fan = ({ load }) => {
   const col = load > 85 ? "#f87171" : load > 65 ? "#ffb35c" : "#ebe5dd";
   const blade = "M30.3 19.3 Q34 13.2 46.4 15.1 C31.7 7.3 24.1 13.5 24.9 19.5 Z";  // swept blade: hub root to a tip trailing 55° round
   return (
     <div>
-      <div className="ring fan">
+      <div className="ring fan" onClick={rev} title="Click to rev">
         <svg width="56" height="56" viewBox="0 0 56 56" style={{ position: "absolute", inset: 0 }}>
           <circle cx="28" cy="28" r="25.5" fill="rgba(255,214,170,.035)" stroke="rgba(255,214,170,.14)" strokeWidth="1.5" />
           <circle cx="28" cy="28" r="23" fill="none" stroke={col} strokeOpacity=".35" strokeWidth=".8" strokeDasharray="1.5 3.2" />
@@ -513,7 +532,7 @@ const Fan = ({ load }) => {
         <svg width="56" height="56" viewBox="0 0 56 56" style={{ position: "absolute", inset: 0 }}>
           <circle cx="28" cy="28" r="10" fill={col} stroke="#1a1512" strokeOpacity=".5" strokeWidth="2" />
         </svg>
-        <b className="num">{load}</b>
+        <b className="num"></b>
       </div>
       <div className="lbl rl">FAN</div>
     </div>
