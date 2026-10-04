@@ -511,7 +511,8 @@ export const className = `
   .go { margin-left:6px; padding:1px 6px; border-radius:5px; background:rgba(255,255,255,.06); color:#e6dcd2; cursor:pointer }
   .go:hover { background:rgba(255,255,255,.12) } .go.busy { color:#ffb35c; cursor:default }
 `;
-const NODES = [[36, 28], [164, 28], [36, 112], [164, 112]];
+// hex around CORE; the side nodes put their labels below, anchored inward so they stay inside the svg
+const NODES = [[36, 24], [164, 24], [14, 70], [186, 70], [36, 116], [164, 116]];
 const savedView = () => { try { return localStorage.getItem("conn-view") || "LIVE"; } catch (e) { return "LIVE"; } };
 export const initialState = { output: "", view: savedView() };
 export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: ev.view }
@@ -531,13 +532,13 @@ const Live = ({ n }) => {
   return (
     <div className="body">
       <svg width="200" height="140" viewBox="0 0 200 140">
-        {svcs.map((s, i) => <line key={"l" + i} className="flow" x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={col(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
+        {svcs.slice(0, NODES.length).map((s, i) => <line key={"l" + i} className="flow" x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={col(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
         <circle cx="100" cy="70" r="16" fill="rgba(36,27,22,1)" stroke="#ffb35c" strokeWidth="1.3" />
         <text x="100" y="73.5" textAnchor="middle" fontSize="7" fontWeight="700" fill="#ffb35c" letterSpacing=".5" fontFamily="Orbitron">CORE</text>
-        {svcs.map((s, i) => { const [x, y] = NODES[i], below = y > 70; return (
+        {svcs.map((s, i) => { const [x, y] = NODES[i], side = y === 70 ? (x < 100 ? -1 : 1) : 0; return (
           <g key={s.name}>
             <circle className="pulse" cx={x} cy={y} r="4.5" fill={col(s.ms)} style={{ filter: `drop-shadow(0 0 4px ${col(s.ms)})` }} />
-            <text x={x} y={below ? y + 16 : y - 9} textAnchor="middle" fontSize="9" fill="#d9cfc6">{s.name} <tspan fill={col(s.ms)}>{s.ms ? s.ms + "ms" : "down"}</tspan></text>
+            <text x={side ? x + side * 10 : x} y={y > 70 || side ? y + 16 : y - 9} textAnchor={side < 0 ? "start" : side > 0 ? "end" : "middle"} fontSize="9" fill="#d9cfc6">{s.name} <tspan fill={col(s.ms)}>{s.ms ? s.ms + "ms" : "down"}</tspan></text>
           </g>); })}
       </svg>
       <div className="rates num">

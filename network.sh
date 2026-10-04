@@ -6,7 +6,7 @@ dev=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}'); dev=${de
 ip=$(ipconfig getifaddr $dev 2>/dev/null)
 b1=($(netstat -ib -I $dev | awk 'NR==2{print $7, $10}'))
 tmp=$(mktemp -d)
-for pair in "GitHub github.com" "Yahoo finance.yahoo.com" "Claude api.anthropic.com" "Google www.google.com"; do
+for pair in "GitHub github.com" "Yahoo finance.yahoo.com" "Claude api.anthropic.com" "Google www.google.com" "Vercel vercel.com" "Supabase supabase.com"; do
   (n=${pair%% *}; h=${pair#* }; t=$(curl -o /dev/null -s -m 3 -w '%{time_connect}' https://$h); print "$n $t" > $tmp/$n) &
 done
 sleep 1; b2=($(netstat -ib -I $dev | awk 'NR==2{print $7, $10}')); wait
