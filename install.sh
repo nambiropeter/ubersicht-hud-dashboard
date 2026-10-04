@@ -10,7 +10,7 @@ command -v brew >/dev/null || { print "Install Homebrew first: https://brew.sh";
 mkdir -p "$HOME/Library/Application Support/Übersicht/widgets"
 python3 $DIR/build_widgets.py
 
-# Mail auto-sync: every 10 minutes and on network changes
+# Background agents: mail auto-sync (every 10 min + network changes) and the HUD pointer hider
 for f in $DIR/launchd/*.plist; do
   label=${${f:t}%.plist}; dest=~/Library/LaunchAgents/${f:t}
   sed "s|__HOME__|$HOME|g" $f > $dest

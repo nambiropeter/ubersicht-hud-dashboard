@@ -1,12 +1,14 @@
 """Builds the Übersicht desktop dashboard from one shared layout grid.
 Run: python3 ~/.stark/build_widgets.py   (then Übersicht reloads automatically)"""
-import os, re, shutil, time, urllib.parse
+import json, os, re, shutil, time, urllib.parse
 
 BUILD = str(int(time.time()))  # Übersicht hot-reloads code onto the same DOM: each build replaces the previous one's handlers
 
 _S = os.path.expanduser("~/.stark")
 if not os.path.exists(f"{_S}/wifi") or os.path.getmtime(f"{_S}/wifi.swift") > os.path.getmtime(f"{_S}/wifi"):
     os.system(f"swiftc -O {_S}/wifi.swift -o {_S}/wifi")
+if not os.path.exists(f"{_S}/hudcursor") or os.path.getmtime(f"{_S}/hudcursor.swift") > os.path.getmtime(f"{_S}/hudcursor"):
+    os.system(f"swiftc -O {_S}/hudcursor.swift -o {_S}/hudcursor")
 W = os.path.expanduser("~/Library/Application Support/Übersicht/widgets")
 # Übersicht runs widgets with a minimal PATH, so bake in the absolute python3 path at build time
 PY = shutil.which("python3") or "/usr/bin/python3"
@@ -1063,5 +1065,9 @@ export const render = () => { installCursor(); installLinks(); return (
     </g></g>}
   </svg>
 ); };''')
+
+# Panel rects (canvas px, incl. the 1px border) for hudcursor, which hides the system pointer over them.
+json.dump([[x, y + DY, w + 2, h + 2] for n, (x, y, w, h) in POS.items() if n != "aa-links"], open(f"{_S}/.panels.json", "w"))
+os.system(f"launchctl kickstart -k gui/{os.getuid()}/com.stark.hudcursor >/dev/null 2>&1")  # pick up a rebuilt helper
 
 print("wrote", sorted(f for f in os.listdir(W) if f.endswith(".jsx")))

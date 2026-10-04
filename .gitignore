@@ -13,3 +13,5 @@ wifi
 .speed.*
 .pubip.*
 .ssid*
+hudcursor
+.panels.json
