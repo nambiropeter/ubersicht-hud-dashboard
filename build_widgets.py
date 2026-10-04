@@ -1184,6 +1184,107 @@ const installCursor = () => {
   const loop = () => { x += (tx - x) * 0.24; y += (ty - y) * 0.24; ring.style.transform = `translate(${x}px, ${y}px)`; if (window.__hudCursor === "%%BUILD%%") requestAnimationFrame(loop); };
   loop();
 };
+// A little spider makes cameos every few minutes: it lowers itself on silk onto a top panel, walks the panel's border,
+// drops on a thread to the panel below, and finally lets itself down off the bottom of the screen.
+// Click it and it zips back up a thread. window.__spiderNow() calls it in right away.
+const SPIDER_CSS = `
+  #hud-spider { position:fixed; left:0; top:0; width:100%; height:100%; z-index:99985; pointer-events:none; overflow:visible }
+  #hud-spider .silk { fill:none; stroke:rgba(255,255,255,.4); stroke-width:.7 }
+  #hud-spider .sp { position:absolute; left:-14px; top:-14px; width:28px; height:28px; pointer-events:auto; cursor:none; display:none;
+                    filter: drop-shadow(0 2px 2px rgba(0,0,0,.8)) drop-shadow(0 0 1.2px rgba(245,177,76,.5)) }
+  #hud-spider.on .sp { display:block }
+  #hud-spider .lg { fill:none; stroke:#141116; stroke-width:1.1; stroke-linecap:round; stroke-linejoin:round; transform-box: view-box }
+  #hud-spider .walk .a { animation: spa .22s ease-in-out infinite alternate }
+  #hud-spider .walk .b { animation: spb .22s ease-in-out infinite alternate }
+  #hud-spider .fast .a, #hud-spider .fast .b { animation-duration: .09s }
+  #hud-spider .hangs .lg { animation: spcurl 1.8s ease-in-out infinite alternate }
+  @keyframes spa { from { transform: rotate(-9deg) } to { transform: rotate(9deg) } }
+  @keyframes spb { from { transform: rotate(9deg) } to { transform: rotate(-9deg) } }
+  @keyframes spcurl { to { transform: scale(.82) } }
+  #hud-spider .eye { fill:#f5b14c }
+`;
+// Top-down spider facing up; legs in two alternating sets (a/b), each pivoting where it meets the body.
+const SPIDER_LEGS = [[-1.8, -3, -5, -7, -6, -11.5], [-2, -1.8, -6.5, -3.5, -11, -6], [-2, -.6, -6.5, 1, -11, 4], [-1.8, .6, -5, 4.5, -7.5, 10]];
+const SPIDER_SVG = '<svg class="sp" viewBox="-14 -14 28 28">' +
+  SPIDER_LEGS.flatMap(([ax, ay, kx, ky, fx, fy], i) => [[1, i % 2 ? "b" : "a"], [-1, i % 2 ? "a" : "b"]].map(([m, g]) =>
+    `<path class="lg ${g}" style="transform-origin:${m * ax}px ${ay}px" d="M${m * ax} ${ay}L${m * kx} ${ky}L${m * fx} ${fy}"/>`)).join("") +
+  '<g fill="#141116" stroke="rgba(245,177,76,.4)" stroke-width=".45"><ellipse cx="0" cy="4.2" rx="3.6" ry="4.6"/>' +
+  '<ellipse cx="0" cy="-2" rx="2.4" ry="2.8"/></g><path d="M0 1.6V6.5M-1.5 3.5L0 4.6L1.5 3.5" stroke="rgba(245,177,76,.35)" stroke-width=".5" fill="none"/>' +
+  '<circle class="eye" cx="-.8" cy="-4" r=".55"/><circle class="eye" cx=".8" cy="-4" r=".55"/></svg>';
+const installSpider = () => {
+  let st = document.getElementById("hud-spider-style");
+  if (!st) { st = document.createElement("style"); st.id = "hud-spider-style"; document.head.appendChild(st); }
+  st.textContent = SPIDER_CSS;
+  if (window.__hudSpider === "%%BUILD%%") return; window.__hudSpider = "%%BUILD%%";
+  clearTimeout(window.__hudSpiderTimer); document.querySelectorAll("#hud-spider").forEach(n => n.remove());
+  const alive = () => window.__hudSpider === "%%BUILD%%";
+  const root = document.createElement("div"); root.id = "hud-spider";
+  root.innerHTML = '<svg width="100%" height="100%" style="position:absolute;left:0;top:0;overflow:visible"><path class="silk"/></svg>' + SPIDER_SVG;
+  document.body.appendChild(root);
+  const sp = root.querySelector(".sp"), silk = root.querySelector(".silk");
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  let busy = false, scared = false, x = 0, y = -30, ang = 180, goalAng = 180, thread = null;
+  sp.addEventListener("mousedown", e => { e.stopPropagation(); scared = true; });
+  const put = () => {
+    let d = ((goalAng - ang + 540) % 360) - 180; ang += d * .2;
+    sp.style.transform = `translate(${x}px, ${y}px) rotate(${ang}deg)`;
+    if (thread) { silk.style.transition = "none"; silk.style.opacity = 1; silk.setAttribute("d", `M${thread[0]} ${thread[1]}L${x} ${y}`); }
+  };
+  const legs = m => sp.setAttribute("class", "sp " + m);
+  const frame = () => new Promise(r => requestAnimationFrame(r));
+  const stop = () => { if (!alive()) throw "gone"; };
+  const cutSilk = () => { thread = null; silk.style.transition = "opacity 1.4s"; silk.style.opacity = 0; };
+  const panels = () => [...document.querySelectorAll("[data-hud]")].map(o => [o, o.getBoundingClientRect()]).filter(([, r]) => r.width > 120);
+  // A point s along a panel's border, clockwise from its top-left corner.
+  const edge = (r, s) => { const w = r.width, h = r.height, P = 2 * (w + h); s = ((s % P) + P) % P;
+    if (s < w) return [r.left + s, r.top, 90]; if (s < w + h) return [r.right, r.top + s - w, 180];
+    if (s < 2 * w + h) return [r.right - (s - w - h), r.bottom, 270]; return [r.left, r.bottom - (s - 2 * w - h), 0]; };
+  // Walk the border to `to` the short way round, following the panel if it is dragged.
+  const walk = async (o, s, to, speed) => {
+    const r0 = o.getBoundingClientRect(), P = 2 * (r0.width + r0.height); let d = ((to - s) % P + P) % P; if (d > P / 2) d -= P;
+    const dir = Math.sign(d); legs("walk"); let t = performance.now();
+    while (Math.abs(d) > .5 && !scared) { stop(); await frame(); const now = performance.now(), v = Math.min(Math.abs(d), (speed || 38) * (now - t) / 1000); t = now;
+      s += dir * v; d -= dir * v; const [nx, ny, a] = edge(o.getBoundingClientRect(), s); x = nx; y = ny; goalAng = dir > 0 ? a : a + 180; put(); }
+    legs(""); return s;
+  };
+  const rest = async (o, s, ms) => { const t0 = performance.now();
+    while (performance.now() - t0 < ms && !scared) { stop(); await frame(); [x, y] = edge(o.getBoundingClientRect(), s); put(); } };
+  // Lower on silk from (x, ay) down to y = ty.
+  const drop = async (ty, speed) => { thread = [x, y]; goalAng = 180; legs("hangs"); let t = performance.now();
+    while (y < ty && !scared) { stop(); await frame(); const now = performance.now(); y = Math.min(ty, y + (speed || 55) * (now - t) / 1000); t = now;
+      x += Math.sin(now / 400) * .08; put(); } };
+  const flee = async () => { thread = [x, -10]; goalAng = 0; legs("hangs fast"); let t = performance.now();
+    while (y > -30) { stop(); await frame(); const now = performance.now(); y -= 420 * (now - t) / 1000; t = now; put(); } };
+  const cameo = async () => {
+    if (busy) return; busy = true; scared = false;
+    try {
+      const all = panels(); if (!all.length) throw "none";
+      const tops = all.filter(([, r]) => r.top < Math.min(...all.map(([, q]) => q.top)) + 40);
+      let [o, r] = tops[Math.floor(Math.random() * tops.length)], s = rnd(30, r.width - 30);
+      x = r.left + s; y = -20; root.classList.add("on"); thread = [x, -10]; put();
+      await drop(r.top, 70); await rest(o, s, rnd(1200, 2500)); cutSilk();
+      for (;;) {
+        if (scared) break;
+        for (let n = Math.floor(rnd(1, 4)); n > 0 && !scared; n--) {   // wander the border, pausing to look around
+          r = o.getBoundingClientRect(); s = await walk(o, s, rnd(0, 2 * (r.width + r.height))); await rest(o, s, rnd(700, 3500)); }
+        if (scared) break;
+        r = o.getBoundingClientRect();
+        const below = panels().filter(([q, b]) => q !== o && b.top > r.bottom - 4 && b.top - r.bottom < 60 && b.left < r.right - 40 && b.right > r.left + 40);
+        const [q, b] = below.length ? below[Math.floor(Math.random() * below.length)] : [null, null];
+        const lo = Math.max(r.left, b ? b.left : r.left) + 24, hi = Math.min(r.right, b ? b.right : r.right) - 24;
+        s = await walk(o, s, 2 * r.width + r.height - (rnd(lo, hi) - r.left)); if (scared) break;   // to the bottom edge
+        await rest(o, s, rnd(500, 1200)); if (scared) break;
+        if (!q) { await drop(window.innerHeight + 30, 60); break; }
+        await drop(b.top); if (scared) break; o = q; s = x - b.left; await rest(o, s, rnd(800, 1600)); cutSilk();
+      }
+      if (scared) await flee();
+    } catch (e) { if (e !== "gone" && e !== "none") console.error(e); }
+    cutSilk(); legs(""); root.classList.remove("on"); busy = false;
+  };
+  window.__spiderNow = cameo;
+  const plan = ms => { window.__hudSpiderTimer = setTimeout(() => { if (!alive()) return; cameo(); plan(rnd(180000, 420000)); }, ms); };
+  plan(rnd(15000, 40000));
+};
 const PAIRS = [["clock", "weather"], ["weather", "system"], ["system", "connections"], ["markets", "ai-wire"],
   ["batcave", "mail"], ["mail", "movers"], ["clock", "markets"], ["weather", "markets"], ["system", "ai-wire"],
   ["connections", "ai-wire"], ["markets", "batcave"], ["markets", "mail"], ["ai-wire", "movers"]];
@@ -1245,7 +1346,7 @@ export const className = `
   circle { animation: p 2.6s ease-in-out infinite } @keyframes p { 50% { opacity:.4 } }
 `;
 const FONTS = "@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');";
-export const render = () => { installCursor(); installLinks(); return (
+export const render = () => { installCursor(); installLinks(); installSpider(); return (
   <svg width="100%" height="100%" viewBox="0 0 1470 923" preserveAspectRatio="none">
     <style>{FONTS}</style>
     {false && <g>
