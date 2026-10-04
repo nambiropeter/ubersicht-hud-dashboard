@@ -24,7 +24,7 @@ POS = {
 
 SHARED = """
   font: 500 12.5px -apple-system, "SF Pro Text", sans-serif; color: #f2ede6; -webkit-font-smoothing: antialiased;
-  -webkit-user-select: none; user-select: none; cursor: default; box-sizing: border-box;
+  -webkit-user-select: none; user-select: none; cursor: default; box-sizing: content-box;
   background:
     radial-gradient(280px circle at var(--mx, -999px) var(--my, -999px), rgba(255,236,210,.075), transparent 70%),
     linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0) 38%),
@@ -293,9 +293,8 @@ def _cursor(color, size=28):
            f'<circle cx="{c}" cy="{c}" r="5.5"/>'
            f'<path d="M{c} 1v6M{c} {size-7}v6M1 {c}h6M{size-7} {c}h6"/></g>'
            f'<circle cx="{c}" cy="{c}" r="1.6" fill="{color}"/></svg>')
-    return f'url("data:image/svg+xml,{urllib.parse.quote(svg)}") {c} {c}'
+    return f'url("data:image/svg+xml,{urllib.parse.quote(svg, safe="")}") {c} {c}'
 CURSOR = _cursor("#f5b14c") + ", crosshair"
-CURSOR_HOT = _cursor("#ffd696") + ", pointer"
 
 NET = {"weather", "markets", "ai-wire", "movers", "mail", "connections"}  # panels that need the internet
 
@@ -310,7 +309,8 @@ def widget(name, body):
     for old, new in WARM:
         body = body.replace(old, new)
     body = re.sub(r";?\s*text-shadow:[^;}]*", "", body)
-    body = body.replace("cursor: default;", f"cursor: {CURSOR};").replace("cursor:pointer", f"cursor:{CURSOR_HOT}")
+    # one custom cursor everywhere: no system hand/arrow over headers, buttons or rows
+    body = re.sub(r"cursor: ?(default|grabbing|grab|pointer)\b", f"cursor: {CURSOR}", body)
     if name != "aa-links":
         head, mark, tail = body.partition("\nexport const render")
         tail = re.sub(r"(return \(\s*<div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', tail)
