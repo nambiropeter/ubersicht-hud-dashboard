@@ -596,7 +596,7 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── BATCAVE ─────────────────────────
-widget("batcave", r'''// Batcave: git projects (click to open in VS Code) + 12-week commit activity.
+widget("batcave", r'''// Batcave: git projects (click to open in VS Code) + your own 12-week commit activity (see batcave.sh).
 import { run } from "uebersicht";
 export const command = "~/.stark/batcave.sh";
 export const refreshFrequency = 60 * 1000;
@@ -640,7 +640,7 @@ export const render = ({ output }) => {
   return (
     <div>
       <header><svg width="28" height="13" viewBox="-340 -90 680 190"><polygon points={bat} fill="#ffb35c" /></svg>
-        <h1>BATCAVE</h1><span className="sub"><b>{active}</b> ACTIVE · <b>{total}</b> COMMITS</span></header>
+        <h1>BATCAVE</h1><span className="sub" title="Uncommitted repos · your commits in the last 12 weeks"><b>{active}</b> ACTIVE · <b>{total}</b> COMMITS</span></header>
       <div className="list">
         {repos.slice(0, 6).map(r => (
           <div className="row" key={r.path} onClick={() => run(`open -a "Visual Studio Code" "${r.path}"`)}>
