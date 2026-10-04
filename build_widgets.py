@@ -746,7 +746,7 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── MAIL ─────────────────────────
-widget("mail", r'''// Unread Primary emails (promotions filtered out by mail.sh). Click to open in Mail.
+widget("mail", r'''// Unread email: Gmail's Primary tab + iCloud inbox as is (see mail.sh / mail_direct.py). Click to open in Mail.
 import { run } from "uebersicht";
 export const command = "~/.stark/mail.sh";
 export const refreshFrequency = 30 * 1000;
@@ -779,9 +779,12 @@ export const className = `
 const savedPick = () => { try { return localStorage.getItem("mail-pick") || "Gmail"; } catch (e) { return "Gmail"; } };
 export const initialState = { output: "", pick: savedPick() };
 export const updateState = (ev, prev) => ev.type === "PICK" ? { ...prev, pick: ev.pick } : { ...prev, output: ev.output, error: ev.error };
-const problem = m => m.gmail_error ? "Gmail not syncing"
-  : m.mail_app === false && m.running ? "Mail closed · iCloud paused"
-  : m.mail_app && m.icloud_synced && Date.now() / 1000 - m.icloud_synced > 25 * 60 ? "iCloud late " + Math.round((Date.now() / 1000 - m.icloud_synced) / 60) + "m" : null;
+// iCloud only depends on the Mail app until its app password is in the Keychain (then mail_direct.py reads it)
+const viaApp = m => !(m.direct || []).includes("iCloud");
+const problem = m => { const e = m.errors || {}, late = m.icloud_synced ? Date.now() / 1000 - m.icloud_synced : 0;
+  return e.Gmail ? "Gmail not syncing" : e.iCloud ? "iCloud not syncing"
+    : viaApp(m) && m.mail_app === false && m.running ? "Mail closed · iCloud paused"
+    : viaApp(m) && m.mail_app && late > 25 * 60 ? "iCloud late " + Math.round(late / 60) + "m" : null; };
 const ACC = a => /gmail|google/i.test(a) ? ["GMAIL", "#f87171", "rgba(248,113,113,.12)"] : /icloud/i.test(a) ? ["ICLOUD", "#7fdcff", "rgba(127,220,255,.1)"] : [a.toUpperCase().slice(0, 8), "#ffb35c", "rgba(255,179,92,.1)"];
 const name = f => (f || "").replace(/\s*<.*>\s*$/, "").replace(/^"|"$/g, "") || f;
 const when = d => { const t = new Date(d), now = new Date();
@@ -797,7 +800,7 @@ export const render = ({ output, pick }, dispatch) => {
   return (
     <div>
       <header><span style={{ color: "#ffb35c" }}>✉</span><h1>MAIL</h1>
-        <span className="sub"><b>{unread}{m && m.more ? "+" : ""}</b> UNREAD IN PRIMARY</span></header>
+        <span className="sub"><b>{unread}{m && m.more ? "+" : ""}</b> UNREAD</span></header>
       {!m ? <div className="empty">Checking Mail…</div>
         : !m.running ? <div className="empty">Open the <b>Mail</b> app to see your latest emails here.</div>
         : <div>
@@ -810,8 +813,8 @@ export const render = ({ output, pick }, dispatch) => {
             return <div key={a}>
               <div className="sec"><span className="acc" style={{ color: c, background: bg }}>{tag}</span>
                 <span className="n">{n} UNREAD</span><span className="line" /></div>
-              {a === "Gmail" && m.gmail_error ? <div className="none" style={{ color: "#ff6b6b" }}>⚠ Can't reach Gmail right now. Retrying every 30 s.</div>
-                : !items.length ? <div className="none">✓ Nothing new in Primary</div>
+              {(m.errors || {})[a] ? <div className="none" style={{ color: "#ff6b6b" }}>⚠ Can't reach {a} right now. Retrying every 30 s.</div>
+                : !items.length ? <div className="none">✓ {a === "Gmail" ? "Nothing new in Primary" : "No unread email"}</div>
                 : items.slice(0, 4).map(x => (
                 <div className={"it" + (x.read ? "" : " unread")} key={x.id + x.acc}
                      onClick={() => run(`open "message://%3c${encodeURIComponent(x.id)}%3e"`)}>

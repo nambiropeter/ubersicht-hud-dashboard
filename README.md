@@ -40,14 +40,17 @@ echo 'source ~/.stark/stark.zsh' >> ~/.zshrc
 
 macOS will ask once to let Übersicht and `osascript` control **Mail**.
 
-**Gmail Primary tab:** create an app password at <https://myaccount.google.com/apppasswords>, then store it in the
-Keychain (it is never written to a file):
+**Mail without the Mail app:** store an app password for each account in the Keychain (never written to a file),
+and `mail_direct.py` reads it straight from the server:
 
 ```sh
+# Gmail (shows Gmail's real Primary tab): https://myaccount.google.com/apppasswords
 security add-generic-password -U -s desktop-widget-gmail -a you@gmail.com -w
+# iCloud (every unread inbox email, unfiltered): account.apple.com → App-Specific Passwords
+security add-generic-password -U -s desktop-widget-icloud -a you@icloud.com -w
 ```
 
-Without it, Gmail falls back to a header-based promo filter through Mail.app. iCloud has no tabs, so it always uses that filter.
+An account without one is read from Mail.app instead, as is, and only while Mail is open.
 
 ## Customize
 
@@ -56,7 +59,6 @@ All widgets are generated from **`build_widgets.py`**, so edit it and run `pytho
 - **Layout:** the `POS` grid at the top (laid out for a 1470×956 pt screen)
 - **Stocks:** `SPARK` (main panel) and `MOVERS` in `market.py`
 - **Weather location:** `LAT`/`LON` in `weather.sh`
-- **Promo filter rules (iCloud):** `BULK`, `KEEP` and `PROMO_FROM` in `mail.sh`
 
 ## Files
 
@@ -68,7 +70,7 @@ system.sh          CPU / memory / disk / battery
 network.sh         IP, throughput, service latency
 batcave.sh         git project status + commit activity
 mail.sh            unread Primary mail from Mail.app
-gmail_primary.py   Gmail's real Primary tab over IMAP (app password from Keychain)
+mail_direct.py     Gmail Primary + iCloud over IMAP (app passwords from Keychain)
 mail-sync.sh       syncs Mail.app accounts (run by launchd)
 launchd/           mail-sync agents (timer + network change)
 stark.zsh          terminal theme
