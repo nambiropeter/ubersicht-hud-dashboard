@@ -336,7 +336,7 @@ export const command = "date +%s";
 export const refreshFrequency = 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  padding: 18px 18px 16px 20px; cursor: grab;
+  padding: 18px 18px 16px 20px;
   .time { display:flex; align-items:baseline; gap:8px }
   .time b { font: 200 60px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.03em; line-height:1; color:#ffffff }
   .time span { font: 300 20px -apple-system, sans-serif; color:#f5b14c }
