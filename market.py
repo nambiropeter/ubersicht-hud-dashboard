@@ -14,8 +14,30 @@ FEEDS = [("CNBC", "https://www.cnbc.com/id/100003114/device/rss/rss.html"),
          ("Yahoo", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=^GSPC,AAPL,NVDA,TSLA&region=US&lang=en-US")]
 G, R, Y, C, D, B, X = "\033[32m", "\033[31m", "\033[33m", "\033[36m", "\033[2m", "\033[1m", "\033[0m"
 
+# Yahoo is asked gently: per-symbol results are cached on disk (shared by the quotes and movers widgets), refetched
+# less often while the market is shut, and a 429 ("too many requests") pauses all Yahoo calls for 15 minutes.
+CACHE, COOL = __import__("os").path.expanduser("~/.stark/.yahoo-cache.json"), __import__("os").path.expanduser("~/.stark/.yahoo-cooldown")
+FRESH, FRESH_CLOSED, CAPS_FRESH, COOLDOWN = 4 * 60, 30 * 60, 30 * 60, 15 * 60
+
+def load_cache():
+    try: return json.load(open(CACHE))
+    except Exception: return {}
+
+def save_cache(c):
+    import os
+    tmp = f"{CACHE}.{os.getpid()}"
+    json.dump(c, open(tmp, "w")); os.replace(tmp, CACHE)
+
+def cooling():
+    import os
+    try: return time.time() - os.path.getmtime(COOL) < COOLDOWN
+    except OSError: return False
+
 def get(url):
-    return urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=8).read()
+    try: return urllib.request.urlopen(urllib.request.Request(url, headers=UA), timeout=8).read()
+    except urllib.error.HTTPError as e:
+        if e.code == 429 and "yahoo" in url: open(COOL, "w").close()
+        raise
 
 def quote(sym):
     try:
@@ -93,8 +115,15 @@ ALERT_RE = re.compile(r"\b(lay ?offs?|laid off|laying off|lays off|job cuts?|wor
                       r"(jobs|roles|positions|workers|employees|staff))\b", re.I)
 AI_WORDS = ("ai", "a.i.", "openai", "anthropic", "nvidia", "chip", "gpu", "llm", "model", "robot", "data center", "agent")
 
-def spark(sym):
-    """Price, day change and a 5-day hourly sparkline for one symbol."""
+FETCHED = set()  # symbols this run actually downloaded (the rest came from the cache)
+
+def spark(sym, cache=None):
+    """Price, day change and a 5-day hourly sparkline for one symbol (cached; see FRESH)."""
+    hit = (cache or {}).get("spark:" + sym)
+    if hit:
+        age, last = time.time() - hit["at"], (hit["q"]["ts"] or [0])[-1]
+        if cooling() or age < (FRESH if time.time() - last < 2 * 3600 else FRESH_CLOSED): return hit["q"]
+    if cooling(): return None
     try:
         r = json.loads(get(f"https://query1.finance.yahoo.com/v8/finance/chart/{sym}?range=5d&interval=1h"))["chart"]["result"][0]
         m = r["meta"]
@@ -103,12 +132,13 @@ def spark(sym):
         price, prev = m["regularMarketPrice"], m.get("previousClose") or m.get("chartPreviousClose")
         ch = m.get("regularMarketChangePercent")
         if ch is None and prev: ch = (price - prev) / prev * 100
+        FETCHED.add(sym)
         return {"sym": sym, "name": NAMES.get(sym, sym), "p": price, "c": ch or 0.0,
                 "hi": m.get("regularMarketDayHigh"), "lo": m.get("regularMarketDayLow"),
                 "spark": [round(c, 2) for c in closes], "ts": [t for t, _ in pts],
                 "prev": prev}  # previous close: the chart baseline and what the day % is measured against
     except Exception:
-        return None
+        return hit["q"] if hit else None  # a stale point beats a hole in the grid
 
 def feed(feeds, n, ai_first=False, rank=False):
     from email.utils import parsedate_to_datetime
@@ -136,7 +166,10 @@ def feed(feeds, n, ai_first=False, rank=False):
     return out
 
 def market_caps(syms):
-    """Market caps via Yahoo's quote API (needs a session cookie + crumb). Returns {} on failure."""
+    """Market caps via Yahoo's quote API (needs a session cookie + crumb). Cached CAPS_FRESH; {} on failure."""
+    cache = load_cache().get("caps", {})
+    if cooling() or (time.time() - cache.get("at", 0) < CAPS_FRESH and all(s in cache.get("v", {}) for s in syms)):
+        return cache.get("v", {})
     try:
         op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
         op.addheaders = list(UA.items())
@@ -145,17 +178,28 @@ def market_caps(syms):
         crumb = op.open("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=8).read().decode()
         url = (f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={','.join(syms)}"
                f"&fields=marketCap&crumb={urllib.parse.quote(crumb)}")
-        return {q["symbol"]: q.get("marketCap") for q in json.loads(op.open(url, timeout=8).read())["quoteResponse"]["result"]}
+        caps = {q["symbol"]: q.get("marketCap") for q in json.loads(op.open(url, timeout=8).read())["quoteResponse"]["result"]}
+        return {**cache.get("v", {}), **caps, "__at": time.time()}
+    except urllib.error.HTTPError as e:
+        if e.code == 429: open(COOL, "w").close()
+        return cache.get("v", {})
     except Exception:
-        return {}
+        return cache.get("v", {})
 
 def as_json(kind):
     if kind in ("quotes", "movers"):
         syms = SPARK if kind == "quotes" else MOVERS + [x for x in SPARK if x != "^IXIC" and x not in MOVERS]
+        cache = load_cache()
         with ThreadPoolExecutor(16) as ex:
             caps = ex.submit(market_caps, syms)
-            data = [q for q in ex.map(spark, syms) if q]
-        for q in data: q["cap"] = caps.result().get(q["sym"])
+            data = [q for q in ex.map(lambda s: spark(s, cache), syms) if q]
+            caps = caps.result()
+        latest = load_cache()  # re-read: the other widget may have written meanwhile
+        for q in data:
+            if q["sym"] in FETCHED: latest["spark:" + q["sym"]] = {"at": time.time(), "q": dict(q)}
+            q["cap"] = caps.get(q["sym"])
+        if "__at" in caps: latest["caps"] = {"at": caps.pop("__at"), "v": caps}
+        if FETCHED or "caps" in latest: save_cache(latest)
     elif kind == "tech": data = feed(TECH_FEEDS, 12, ai_first=True, rank=True)
     else: data = feed(FEEDS, 6)
     print(json.dumps(data))

@@ -5,15 +5,23 @@ D=~/.stark
 dev=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}'); dev=${dev:-en0}
 ip=$(ipconfig getifaddr $dev 2>/dev/null)
 b1=($(netstat -ib -I $dev | awk 'NR==2{print $7, $10}'))
-tmp=$(mktemp -d)
+# latency = DNS + TCP connect to port 443, then hang up: no TLS, no page download
+lat=$(mktemp)
+python3 - > $lat <<'PY' &
+import socket, time
+from concurrent.futures import ThreadPoolExecutor
 # order = node slot in the Connections panel
-i=0
-for pair in "Claude api.anthropic.com" "GitHub github.com" "Apple www.apple.com" "Meta www.meta.com" "TikTok www.tiktok.com" "Yahoo finance.yahoo.com" "Netflix www.netflix.com" "Google www.google.com"; do
-  (n=${pair%% *}; h=${pair#* }; t=$(curl -o /dev/null -s -m 3 -w '%{time_connect}' https://$h); print "$n $t" > $tmp/$i-$n) &
-  ((i++))
-done
+HOSTS = [("Claude", "api.anthropic.com"), ("GitHub", "github.com"), ("Apple", "www.apple.com"), ("Meta", "www.meta.com"),
+         ("TikTok", "www.tiktok.com"), ("Yahoo", "finance.yahoo.com"), ("Netflix", "www.netflix.com"), ("Google", "www.google.com")]
+def ping(h):
+    t = time.monotonic()
+    try: socket.create_connection((h, 443), timeout=3).close(); return round((time.monotonic() - t) * 1000)
+    except OSError: return 0
+with ThreadPoolExecutor(len(HOSTS)) as ex:
+    print(",".join('{"name":"%s","ms":%d}' % (n, ms) for (n, _), ms in zip(HOSTS, ex.map(ping, [h for _, h in HOSTS]))))
+PY
 sleep 1; b2=($(netstat -ib -I $dev | awk 'NR==2{print $7, $10}')); wait
-svc=""; for f in $tmp/*; do read n t < $f; ms=$(awk -v t=$t 'BEGIN{printf "%.0f", t*1000}'); svc+="{\"name\":\"$n\",\"ms\":$ms},"; done; rm -rf $tmp
+svc=$(<$lat); rm -f $lat
 
 # Wi-Fi: CoreWLAN helper for the link; macOS hides the name from scripts, so it comes from the user's
 # "Wi-Fi Name" shortcut (~3 s), cached and refreshed in the background every 5 min or when the channel changes
