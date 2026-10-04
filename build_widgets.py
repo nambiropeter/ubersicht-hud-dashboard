@@ -1184,7 +1184,7 @@ const installCursor = () => {
   const loop = () => { x += (tx - x) * 0.24; y += (ty - y) * 0.24; ring.style.transform = `translate(${x}px, ${y}px)`; if (window.__hudCursor === "%%BUILD%%") requestAnimationFrame(loop); };
   loop();
 };
-// Ten little spiders, each on its own schedule: one lowers itself on silk onto a top panel, walks the borders,
+// Ten little spiders, each on its own schedule: one lowers itself on silk onto a top panel, walks the borders and across the panels,
 // sometimes spins a web at a corner, drops on a thread to the panel below, and lets itself down off the bottom.
 // Webs hang in the gutters for 20 minutes (fading out over the last one) and survive reloads.
 // Click a spider to kick it: it tumbles off the screen and comes back about 30 s later. window.__spiderNow() sends one in right away.
@@ -1297,6 +1297,17 @@ const installSpider = () => {
       while (Math.abs(d) > .5 && !scared) { stop(); await frame(); const now = performance.now(), v = Math.min(Math.abs(d), (speed || 38) * pace * (now - t) / 1000); t = now;
         s += dir * v; d -= dir * v; const [nx, ny, a] = edge(o.getBoundingClientRect(), s); x = nx; y = ny; goalAng = dir > 0 ? a : a + 180; put(); }
       legs(""); return s; };
+    // Walk straight across the panel's face from border point s to border point to (over its content).
+    const cross = async (o, s, to) => {
+      const at = q => { const r = o.getBoundingClientRect(), [ex, ey] = edge(r, q); return [ex - r.left, ey - r.top]; };
+      const [ax, ay] = at(s), [bx, by] = at(to), len = Math.hypot(bx - ax, by - ay), stopAt = Math.random() < .6 ? rnd(.3, .7) : 2;
+      goalAng = Math.atan2(bx - ax, -(by - ay)) * 180 / Math.PI; legs("walk"); let k = 0, t = performance.now(), paused = 0;
+      while (k < 1 && !scared) { stop(); await frame(); const now = performance.now(), r = o.getBoundingClientRect();
+        if (k >= stopAt && !paused) { paused = now + rnd(1500, 4500); legs(""); }   // stop for a look at what's on the panel
+        if (paused && now < paused) { t = now; } else { if (paused) { paused = -1; legs("walk"); }
+          k = Math.min(1, k + 30 * pace * (now - t) / 1000 / Math.max(1, len)); t = now; }
+        x = r.left + ax + (bx - ax) * k; y = r.top + ay + (by - ay) * k; put(); }
+      legs(""); return to; };
     const rest = async (o, s, ms) => { const t0 = performance.now();
       while (performance.now() - t0 < ms && !scared) { stop(); await frame(); [x, y] = edge(o.getBoundingClientRect(), s); put(); } };
     const drop = async (ty, speed) => { thread = [x, y]; goalAng = 180; legs("hangs"); let t = performance.now();
@@ -1318,7 +1329,10 @@ const installSpider = () => {
           if (scared) break;
           for (let n = Math.floor(rnd(1, 4)); n > 0 && !scared; n--) {   // wander the border, pausing to look around
             r = o.getBoundingClientRect(); const w = r.width, h = r.height;
-            if (Math.random() < .45) {   // head for a corner and spin a web there
+            const roll = Math.random();
+            if (roll < .3) {   // cut across the top of the panel to another edge
+              const P = 2 * (w + h); s = await cross(o, s, s + rnd(.3, .7) * P);
+            } else if (roll < .6) {   // head for a corner and spin a web there
               const c = Math.floor(rnd(0, 4)); s = await walk(o, s, [0, w, w + h, 2 * w + h][c]); if (scared) break;
               legs("spin"); spin(o.dataset.hud, c); await rest(o, s, 4800); legs("");
             } else { s = await walk(o, s, rnd(0, 2 * (w + h))); }
