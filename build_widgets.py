@@ -380,7 +380,12 @@ export const command = "~/.stark/weather.sh";
 export const refreshFrequency = 15 * 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
+  .stage { display:grid }
+  .view { grid-area: 1 / 1; opacity:0; visibility:hidden; transition: opacity .25s, visibility .25s }
+  .view.on { opacity:1; visibility:visible }
   .main { display:flex; align-items:center; gap:14px; padding:10px 18px 4px }
+  .temp .lo { font-size:24px; color:#8c8178; margin-left:4px; letter-spacing:0 }
+  .cond .when { font-size:9.5px; letter-spacing:.16em; color:#f5b14c; font-weight:600 }
   .ico { font-size:44px; line-height:1; filter: drop-shadow(0 4px 12px rgba(255,179,92,.35)) }
   .temp { font: 200 50px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.02em; line-height:1; color:#ffffff }
   .temp sup { font-size:18px; color:#ffb35c; vertical-align: 20px; margin-left:2px }
@@ -389,9 +394,11 @@ export const className = `
   .cond span { display:block; font-size:11px; color:#a39a92; line-height:1.5 }
   .chips { display:flex; gap:6px; padding:4px 16px 10px }
   .chip { flex:1; text-align:center; font-size:10.5px; padding:5px 0; border-radius:10px; background:rgba(255,214,170,.04); border:1px solid rgba(255,214,170,.06); color:#d9cfc6; white-space:nowrap }
-  .days { display:grid; grid-template-columns: repeat(5, 1fr); margin:0 12px; padding-top:8px; border-top:1px solid rgba(255,214,170,.08); text-align:center }
+  .days { display:grid; grid-template-columns: repeat(5, 1fr); margin:0 12px; padding-top:5px; border-top:1px solid rgba(255,214,170,.08); text-align:center }
+  .d { border-radius:10px; padding:2px 0 3px; cursor:pointer; transition: background .25s, box-shadow .25s }
+  .d:hover, .d.sel { background:rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px rgba(245,177,76,.3) }
   .d .n { font-size:9.5px; letter-spacing:.14em; color:#8c8178; font-weight:600 }
-  .d .i { font-size:17px; margin:3px 0 1px }
+  .d .i { font-size:17px; margin:2px 0 1px }
   .d .hl { font-size:11px } .d .hl span { color:#6f665f }
   .bar { height:3px; margin:5px 12px 0; border-radius:2px; background:rgba(127,220,255,.12); overflow:hidden }
   .bar i { display:block; height:100%; background:#7fdcff }
@@ -402,6 +409,30 @@ const WMO = { 0:["Clear","☀️","🌙"], 1:["Mostly clear","🌤","🌙"], 2:[
   82:["Heavy showers","⛈","⛈"], 95:["Thunderstorm","⛈","⛈"], 96:["Thunderstorm","⛈","⛈"], 99:["Thunderstorm","⛈","⛈"] };
 const wmo = (c, day = 1) => { const w = WMO[c] || ["—", "🌡", "🌡"]; return [w[0], day ? w[1] : w[2]]; };
 const hm = s => (s || "").slice(11, 16);
+// Hover a day to put its full forecast where "now" is; leaving the panel (or 8 s idle) brings now back, like Tech Markets.
+const pick = (root, k) => { if (!root) return;
+  root.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.dataset.k === k));
+  root.querySelectorAll(".d").forEach(v => v.classList.toggle("sel", v.dataset.k === k)); };
+// Übersicht sends no mouseleave when the mouse leaves into a gap between panels, hence the idle fallback.
+const home = e => { const el = e.currentTarget; clearTimeout(window.__wxHome); window.__wxHome = setTimeout(() => pick(el, "now"), 8000); };
+const DayView = ({ d, i }) => { const [label, icon] = wmo(d.weather_code[i]), at = new Date(d.time[i] + "T12:00");
+  return (
+    <div className="view" data-k={"d" + i}>
+      <div className="main">
+        <div className="ico">{icon}</div>
+        <div className="temp num">{Math.round(d.temperature_2m_max[i])}<sup>°C</sup><span className="lo">{Math.round(d.temperature_2m_min[i])}°</span></div>
+        <div className="cond"><span className="when">{at.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" }).toUpperCase()}</span>
+          <b>{label}</b>
+          <span className="num">Rain chance {d.precipitation_probability_max[i] ?? 0}%</span></div>
+      </div>
+      <div className="chips num">
+        <span className="chip">🌧 {(d.precipitation_sum?.[i] ?? 0).toFixed(1)} mm</span>
+        <span className="chip">💨 {Math.round(d.wind_speed_10m_max?.[i] ?? 0)} km/h</span>
+        <span className="chip">UV {Math.round(d.uv_index_max[i])}</span>
+        <span className="chip">☀︎ {hm(d.sunrise[i])}</span>
+        <span className="chip">☾ {hm(d.sunset[i])}</span>
+      </div>
+    </div>); };
 export const render = ({ output }) => {
   let w = null; try { w = JSON.parse(output); } catch (e) {}
   const ok = w && w.current;
@@ -409,7 +440,9 @@ export const render = ({ output }) => {
   if (!ok) return <div>{head}</div>;
   const c = w.current, d = w.daily, [label, icon] = wmo(c.weather_code, c.is_day);
   return (
-    <div>{head}
+    <div onMouseLeave={e => pick(e.currentTarget, "now")} onMouseMove={home}>{head}
+      <div className="stage">
+      <div className="view on" data-k="now">
       <div className="main">
         <div className="ico">{icon}</div>
         <div className="temp num">{Math.round(c.temperature_2m)}<sup>°C</sup></div>
@@ -424,9 +457,12 @@ export const render = ({ output }) => {
         <span className="chip">☀︎ {hm(d.sunrise[0])}</span>
         <span className="chip">☾ {hm(d.sunset[0])}</span>
       </div>
+      </div>
+      {d.time.slice(1, 6).map((t, i) => <DayView key={t} d={d} i={i + 1} />)}
+      </div>
       <div className="days">
         {d.time.slice(1, 6).map((t, i) => { const rain = d.precipitation_probability_max[i + 1] ?? 0; return (
-          <div className="d" key={t}>
+          <div className="d" key={t} data-k={"d" + (i + 1)} onMouseEnter={e => pick(e.currentTarget.closest(".days").parentElement, "d" + (i + 1))}>
             <div className="n">{new Date(t + "T12:00").toLocaleDateString("en-US", { weekday: "short" }).toUpperCase()}</div>
             <div className="i">{wmo(d.weather_code[i + 1])[1]}</div>
             <div className="hl num">{Math.round(d.temperature_2m_max[i + 1])}° <span>{Math.round(d.temperature_2m_min[i + 1])}°</span></div>
