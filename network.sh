@@ -18,7 +18,7 @@ def ping(h):
     try: socket.create_connection((h, 443), timeout=3).close(); return round((time.monotonic() - t) * 1000)
     except OSError: return 0
 with ThreadPoolExecutor(len(HOSTS)) as ex:
-    print(",".join('{"name":"%s","ms":%d}' % (n, ms) for (n, _), ms in zip(HOSTS, ex.map(ping, [h for _, h in HOSTS]))))
+    print(",".join('{"name":"%s","host":"%s","ms":%d}' % (n, h, ms) for (n, h), ms in zip(HOSTS, ex.map(ping, [h for _, h in HOSTS]))))
 PY
 sleep 1; b2=($(netstat -ib -I $dev | awk 'NR==2{print $7, $10}')); wait
 svc=$(<$lat); rm -f $lat

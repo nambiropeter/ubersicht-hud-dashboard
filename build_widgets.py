@@ -623,6 +623,12 @@ export const className = `
   .weak { animation: f .5s linear infinite, flick .35s steps(2) infinite } @keyframes flick { 50% { stroke-opacity: .25 } }
   .spark { animation: spark var(--t) ease-out infinite; animation-delay: var(--d) }
   @keyframes spark { 0% { transform: translate(0, 0); opacity: 1 } 70% { opacity: .8 } 100% { transform: translate(var(--dx), var(--dy)); opacity: 0 } }
+  .live { user-select:none; -webkit-user-select:none }
+  .node .dot { transform-box: fill-box; transform-origin: center; transition: transform .2s cubic-bezier(.3,1.6,.5,1) }
+  .node:hover .dot { transform: scale(1.6) } .node.held .dot { transform: scale(1.9) }
+  .node:hover text, .node.held text { fill:#fff7ee }
+  .node.pinged .dot { animation: pinged .6s ease-out } @keyframes pinged { 0% { transform: scale(2.6) } 100% { transform: scale(1) } }
+  .ln.taut { stroke-dasharray: 2 4; stroke-width: 1.6 }
   .rates { margin-left:auto; text-align:right; padding-right:8px }
   .rate { font: 200 25px -apple-system, sans-serif; line-height:1.15 } .rate small { font-size:10px; color:#8c8178; margin-left:3px }
   .rl { font-size:9.5px; letter-spacing:.16em; color:#8c8178; font-weight:600; margin-top:8px }
@@ -696,6 +702,55 @@ const hm = t => new Date(t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit"
 const bars = rssi => rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : 1;
 const sigCol = n => n >= 3 ? "#4ade80" : n === 2 ? "#ffb35c" : "#f87171";
 
+// Nodes you can play with: grab one and its line stretches after it; let go and it springs home with a wobble; flick it and
+// it flies off, bounces around the panel and comes back. A click without dragging pings that service once and shows the result.
+// Offsets live outside React (window.__connPlay) and are written straight to the DOM, so refreshes don't fight a drag.
+const PLAY = window.__connPlay || (window.__connPlay = { o: {}, run: {} });
+const nodeXY = i => { const o = PLAY.o[i] || [0, 0]; return [NODES[i][0] + o[0], NODES[i][1] + o[1]]; };
+const place = (svg, i) => { const o = PLAY.o[i] || [0, 0], [x, y] = nodeXY(i), far = Math.hypot(o[0], o[1]) > 2;
+  const g = svg.querySelector(`.node[data-i="${i}"]`); if (g) g.setAttribute("transform", far ? `translate(${o[0].toFixed(1)} ${o[1].toFixed(1)})` : "");
+  const l = svg.querySelector(`.ln[data-i="${i}"]`); if (l) { l.setAttribute("x2", x.toFixed(1)); l.setAttribute("y2", y.toFixed(1)); l.classList.toggle("taut", far); }
+  svg.querySelectorAll(`.fx[data-i="${i}"]`).forEach(f => f.style.display = far ? "none" : ""); };   // sparks/reach stay put, so hide them while away
+// the panel's inside, in svg units, so nodes can roam the whole panel but not leave it
+const bounds = svg => { const m = svg.getScreenCTM(), sr = svg.getBoundingClientRect(), pr = (svg.closest(".widget") || svg).getBoundingClientRect();
+  return [(pr.left - sr.left) / m.a + 8, (pr.top - sr.top) / m.d + 34, (pr.right - sr.left) / m.a - 8, (pr.bottom - sr.top) / m.d - 8]; };
+// spring home (underdamped, so it overshoots and wobbles), bouncing off the panel edges; runs only while the node is moving
+const fly = (svg, i, vx, vy) => { const id = PLAY.run[i] = (PLAY.run[i] || 0) + 1, [L, T, R, B] = bounds(svg); let t = performance.now();
+  const step = now => { if (PLAY.run[i] !== id || !svg.isConnected) return;
+    const dt = Math.min(.033, (now - t) / 1000); t = now; const o = PLAY.o[i] || [0, 0];
+    vx += (-120 * o[0] - 9 * vx) * dt; vy += (-120 * o[1] - 9 * vy) * dt; o[0] += vx * dt; o[1] += vy * dt;
+    const [x, y] = [NODES[i][0] + o[0], NODES[i][1] + o[1]];
+    if (x < L || x > R) { o[0] = Math.max(L, Math.min(R, x)) - NODES[i][0]; vx *= -.7; }
+    if (y < T || y > B) { o[1] = Math.max(T, Math.min(B, y)) - NODES[i][1]; vy *= -.7; }
+    PLAY.o[i] = o; const done = Math.hypot(o[0], o[1]) < .3 && Math.hypot(vx, vy) < 4;
+    if (done) PLAY.o[i] = [0, 0]; place(svg, i); if (!done) requestAnimationFrame(step); };
+  requestAnimationFrame(step); };
+// a packet runs out along the line, and back in the service's colour once the ping answers
+const packet = (svg, i, toNode, colour) => new Promise(res => { const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  c.setAttribute("r", "2.4"); c.setAttribute("fill", colour); c.style.filter = `drop-shadow(0 0 3px ${colour})`; svg.appendChild(c); const t0 = performance.now();
+  const step = now => { const k = Math.min(1, (now - t0) / 280), [x, y] = nodeXY(i), f = toNode ? k : 1 - k;
+    c.setAttribute("cx", 100 + (x - 100) * f); c.setAttribute("cy", 70 + (y - 70) * f);
+    if (k < 1) requestAnimationFrame(step); else { c.remove(); res(); } };
+  requestAnimationFrame(step); });
+const ping = async (svg, i, s) => { const g = svg.querySelector(`.node[data-i="${i}"]`); if (!g || g.dataset.busy) return; g.dataset.busy = 1;
+  const out = await Promise.all([run(`%%PY%% ~/.stark/ping.py ${s.host}`).catch(() => "0"), packet(svg, i, true, "#fff3d6")]);
+  const ms = parseInt(out[0]) || 0, colour = col({ ...s, ms }); await packet(svg, i, false, colour);
+  const t = g.querySelector("tspan"); if (t) { t.textContent = ms ? ms + "ms" : "down"; t.setAttribute("fill", colour); }
+  g.classList.remove("pinged"); void g.getBBox(); g.classList.add("pinged"); delete g.dataset.busy; };
+const grab = (e, i, s) => { if (e.button) return; e.preventDefault(); e.stopPropagation();
+  const g = e.currentTarget, svg = g.ownerSVGElement, m = svg.getScreenCTM(), [L, T, R, B] = bounds(svg);
+  PLAY.run[i] = (PLAY.run[i] || 0) + 1;   // stop any spring already running on it
+  const o0 = [...(PLAY.o[i] || [0, 0])], sx = e.clientX, sy = e.clientY; let moved = false, trail = [[performance.now(), sx, sy]];
+  g.classList.add("held");
+  const move = ev => { if (!ev.buttons) return up(ev);   // the release happened outside the panel
+    const dx = (ev.clientX - sx) / m.a, dy = (ev.clientY - sy) / m.d; if (Math.hypot(dx, dy) > 3) moved = true;
+    PLAY.o[i] = [Math.max(L, Math.min(R, NODES[i][0] + o0[0] + dx)) - NODES[i][0], Math.max(T, Math.min(B, NODES[i][1] + o0[1] + dy)) - NODES[i][1]];
+    place(svg, i); trail.push([performance.now(), ev.clientX, ev.clientY]); if (trail.length > 6) trail.shift(); };
+  const up = ev => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); g.classList.remove("held");
+    if (!moved) { fly(svg, i, 0, 0); return ping(svg, i, s); }
+    const now = performance.now(), a = trail.find(p => now - p[0] < 90) || trail[trail.length - 1], dt = Math.max(.016, (now - a[0]) / 1000);
+    fly(svg, i, (ev.clientX - a[1]) / m.a / dt, (ev.clientY - a[2]) / m.d / dt); };   // throw speed from the last ~90 ms
+  document.addEventListener("mousemove", move); document.addEventListener("mouseup", up); };
 const Live = ({ n }) => {
   const svcs = n ? n.services : [];
   // the hub pulses green when every link is fast, grey when exactly one service is down; a weak link turns it amber
@@ -706,13 +761,13 @@ const Live = ({ n }) => {
   const [dv, du] = n ? rate(n.down) : ["—", ""], [uv, uu] = n ? rate(n.up) : ["—", ""];
   return (
     <div className="body">
-      <svg width="200" height="140" viewBox="0 0 200 140" style={{ overflow: "visible" }}>
+      <svg className="live" width="200" height="140" viewBox="0 0 200 140" style={{ overflow: "visible" }}>
         <defs><linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
           <stop offset="0" stopColor="#fff1b0" /><stop offset=".35" stopColor="#ffb340" /><stop offset=".7" stopColor="#ff5a24" /><stop offset="1" stopColor="#d9261c" stopOpacity="0" />
         </linearGradient></defs>
-        {svcs.slice(0, NODES.length).map((s, i) => !s.ms ? null : <line key={"l" + i} className={weak(s) ? "flow weak" : "flow"} x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={c(s)} strokeWidth="1.3" strokeOpacity=".8" />)}
-        {svcs.slice(0, NODES.length).map((s, i) => s.ms ? null : reach(NODES[i][0], NODES[i][1], dead ? "#f87171" : "#a39a92", i))}
-        {svcs.slice(0, NODES.length).map((s, i) => weak(s) ? sparks(NODES[i][0], NODES[i][1], c(s), i) : null)}
+        {svcs.slice(0, NODES.length).map((s, i) => !s.ms ? null : <line key={"l" + i} data-i={i} className={"ln " + (weak(s) ? "flow weak" : "flow")} x1="100" y1="70" x2={nodeXY(i)[0]} y2={nodeXY(i)[1]} stroke={c(s)} strokeWidth="1.3" strokeOpacity=".8" />)}
+        {svcs.slice(0, NODES.length).map((s, i) => s.ms ? null : <g key={"rf" + i} className="fx" data-i={i}>{reach(NODES[i][0], NODES[i][1], dead ? "#f87171" : "#a39a92", i)}</g>)}
+        {svcs.slice(0, NODES.length).map((s, i) => weak(s) ? <g key={"sf" + i} className="fx" data-i={i}>{sparks(NODES[i][0], NODES[i][1], c(s), i)}</g> : null)}
         {dead && [8, 9, 10].map(k => sparks(100, 70, "#f87171", k))}
         <g className={"hub" + (alert || dead ? " alert" : ok ? " ok" : "")} style={{ "--hub": hub }}>
           <circle className="wave" cx="100" cy="70" r="16" fill="none" stroke={hub} strokeWidth="1" />
@@ -720,9 +775,10 @@ const Live = ({ n }) => {
           <circle className="ring" cx="100" cy="70" r="16" fill="rgba(36,27,22,1)" stroke={hub} strokeWidth="1.3" />
           <text x="100" y="73.5" textAnchor="middle" fontSize="7.5" fontWeight="700" fill={hub} letterSpacing=".8" fontFamily="Orbitron">HUB</text>
         </g>
-        {svcs.map((s, i) => { const [x, y] = NODES[i], side = y === 70 ? (x < 100 ? -1 : 1) : 0; return (
-          <g key={s.name}>
-            <circle className={s.ms ? "pulse" : "char"} cx={x} cy={y} r="4.5" fill={s.ms ? c(s) : "#2a1512"} stroke={s.ms ? "none" : "#ff5a24"} strokeWidth="1.2"
+        {svcs.slice(0, NODES.length).map((s, i) => { const [x, y] = NODES[i], side = y === 70 ? (x < 100 ? -1 : 1) : 0; return (
+          <g key={s.name} className="node" data-i={i} onMouseDown={e => grab(e, i, s)}>
+            <circle cx={x} cy={y} r="11" fill="transparent" />
+            <circle className={"dot " + (s.ms ? "pulse" : "char")} cx={x} cy={y} r="4.5" fill={s.ms ? c(s) : "#2a1512"} stroke={s.ms ? "none" : "#ff5a24"} strokeWidth="1.2"
               style={{ filter: `drop-shadow(0 0 4px ${s.ms ? c(s) : "#ff5a24"})` }} />
             {!s.ms && fire(x, y, i)}
             <text x={side ? x + side * 10 : x} y={y > 70 || side ? y + 16 : y - 9} textAnchor={side < 0 ? "start" : side > 0 ? "end" : "middle"} fontSize="9" fill={dead ? "#f87171" : "#d9cfc6"}>{s.name} <tspan fill={c(s)}>{s.ms ? s.ms + "ms" : "down"}</tspan></text>
@@ -1204,7 +1260,7 @@ const installCursor = () => {
   document.addEventListener("mousemove", e => {
     tx = e.clientX; ty = e.clientY; ring.classList.add("on"); if (!running) { running = true; requestAnimationFrame(loop); }
     aim.style.transform = `translate(${tx}px, ${ty}px)`; aim.classList.toggle("on", !!(e.target.closest && e.target.closest(".widget")));
-    const t = e.target.closest ? e.target.closest(".row,.tile,.it,.hero,header") : null;
+    const t = e.target.closest ? e.target.closest(".row,.tile,.it,.hero,.node,header") : null;
     hot = !!t && !t.matches("header");
     ring.classList.toggle("hot", hot); ring.classList.toggle("grab", !!t && t.matches("header"));
   }, on);
