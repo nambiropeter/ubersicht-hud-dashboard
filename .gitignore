@@ -16,3 +16,4 @@ wifi
 hudcursor
 .panels.json
 .yahoo-*
+!docs/*.png

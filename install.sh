@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Installs the desktop dashboard. Clone this repo to ~/.stark first:
-#   git clone https://github.com/nambiropeter/desktop-dashboard ~/.stark && ~/.stark/install.sh
+#   git clone https://github.com/nambiropeter/ubersicht-hud-dashboard ~/.stark && ~/.stark/install.sh
 set -e
 DIR=${0:A:h}
 [[ $DIR == $HOME/.stark ]] || { print "Clone this repo to ~/.stark — the scripts expect that path."; exit 1; }
