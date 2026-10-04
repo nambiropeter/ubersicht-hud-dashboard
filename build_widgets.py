@@ -546,16 +546,19 @@ const sigCol = n => n >= 3 ? "#4ade80" : n === 2 ? "#ffb35c" : "#f87171";
 
 const Live = ({ n }) => {
   const svcs = n ? n.services : [];
-  // the hub pulses green when every link is fast; any weak link turns it amber and speeds it up, red if a service is down
-  const alert = svcs.some(s => weak(s.ms)), ok = svcs.length > 0 && !alert;
-  const hub = svcs.some(s => !s.ms) ? "#f87171" : ok ? "#4ade80" : "#ffb35c";
+  // the hub pulses green when every link is fast (one service down is tolerated); a weak link turns it amber and
+  // speeds it up, two or more down turn it red, and if everything is down the whole panel goes red and sparks
+  const down = svcs.filter(s => !s.ms).length, dead = svcs.length > 0 && (down === svcs.length || n.ip === "offline");
+  const alert = svcs.some(s => s.ms && weak(s.ms)) || down > 1, ok = svcs.length > 0 && !alert && down <= 1;
+  const hub = dead || down > 1 ? "#f87171" : ok ? "#4ade80" : "#ffb35c", c = ms => dead ? "#f87171" : col(ms);
   const [dv, du] = n ? rate(n.down) : ["—", ""], [uv, uu] = n ? rate(n.up) : ["—", ""];
   return (
     <div className="body">
       <svg width="200" height="140" viewBox="0 0 200 140">
-        {svcs.slice(0, NODES.length).map((s, i) => <line key={"l" + i} className={weak(s.ms) ? "flow weak" : "flow"} x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={col(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
-        {svcs.slice(0, NODES.length).map((s, i) => weak(s.ms) ? sparks(NODES[i][0], NODES[i][1], col(s.ms), i) : null)}
-        <g className={"hub" + (alert ? " alert" : ok ? " ok" : "")}>
+        {svcs.slice(0, NODES.length).map((s, i) => <line key={"l" + i} className={weak(s.ms) ? "flow weak" : "flow"} x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={c(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
+        {svcs.slice(0, NODES.length).map((s, i) => weak(s.ms) ? sparks(NODES[i][0], NODES[i][1], c(s.ms), i) : null)}
+        {dead && [8, 9, 10].map(k => sparks(100, 70, "#f87171", k))}
+        <g className={"hub" + (alert || dead ? " alert" : ok ? " ok" : "")}>
           <circle className="wave" cx="100" cy="70" r="16" fill="none" stroke={hub} strokeWidth="1" />
           <circle className="wave b" cx="100" cy="70" r="16" fill="none" stroke={hub} strokeWidth="1" />
           <circle className="ring" cx="100" cy="70" r="16" fill="rgba(36,27,22,1)" stroke={hub} strokeWidth="1.3" />
@@ -563,13 +566,13 @@ const Live = ({ n }) => {
         </g>
         {svcs.map((s, i) => { const [x, y] = NODES[i], side = y === 70 ? (x < 100 ? -1 : 1) : 0; return (
           <g key={s.name}>
-            <circle className="pulse" cx={x} cy={y} r="4.5" fill={col(s.ms)} style={{ filter: `drop-shadow(0 0 4px ${col(s.ms)})` }} />
-            <text x={side ? x + side * 10 : x} y={y > 70 || side ? y + 16 : y - 9} textAnchor={side < 0 ? "start" : side > 0 ? "end" : "middle"} fontSize="9" fill="#d9cfc6">{s.name} <tspan fill={col(s.ms)}>{s.ms ? s.ms + "ms" : "down"}</tspan></text>
+            <circle className="pulse" cx={x} cy={y} r="4.5" fill={c(s.ms)} style={{ filter: `drop-shadow(0 0 4px ${c(s.ms)})` }} />
+            <text x={side ? x + side * 10 : x} y={y > 70 || side ? y + 16 : y - 9} textAnchor={side < 0 ? "start" : side > 0 ? "end" : "middle"} fontSize="9" fill={dead ? "#f87171" : "#d9cfc6"}>{s.name} <tspan fill={c(s.ms)}>{s.ms ? s.ms + "ms" : "down"}</tspan></text>
           </g>); })}
       </svg>
-      <div className="rates num">
-        <div className="rl">DOWN</div><div className="rate up">↓ {dv}<small>{du}</small></div>
-        <div className="rl">UP</div><div className="rate" style={{ color: "#7fdcff" }}>↑ {uv}<small>{uu}</small></div>
+      <div className="rates num" style={dead ? { color: "#f87171" } : null}>
+        <div className="rl">DOWN</div><div className="rate up" style={dead ? { color: "#f87171" } : null}>↓ {dv}<small>{du}</small></div>
+        <div className="rl">UP</div><div className="rate" style={{ color: dead ? "#f87171" : "#7fdcff" }}>↑ {uv}<small>{uu}</small></div>
         {n && <div className="lip">{n.dev.toUpperCase()} · {n.ip}</div>}
       </div>
     </div>
