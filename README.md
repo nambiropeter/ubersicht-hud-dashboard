@@ -19,7 +19,7 @@ Everything is plain scripts: no API keys, no paid services, no AI calls.
 | Tech Markets | NASDAQ 5-day chart + 11 tech stocks ranked by market cap | Yahoo Finance | 5 min |
 | AI & Tech Wire | Tech headlines, AI stories first | CNBC Tech + Yahoo RSS | 15 min |
 | Batcave | Git projects in `~/Documents/GitHub` and `~/Developer` | `git` | 1 min |
-| Mail | Unread iCloud emails | Mail.app (AppleScript) | 30 s |
+| Mail | Unread Primary emails, Gmail / iCloud tabs | Gmail IMAP + Mail.app (AppleScript) | 30 s |
 | Tech Movers | More tech stocks ranked by today's move | Yahoo Finance | 5 min |
 
 A launchd agent tells Mail.app to sync every 10 minutes and whenever the network changes (`mail-sync.sh`).
@@ -40,6 +40,15 @@ echo 'source ~/.stark/stark.zsh' >> ~/.zshrc
 
 macOS will ask once to let Übersicht and `osascript` control **Mail**.
 
+**Gmail Primary tab:** create an app password at <https://myaccount.google.com/apppasswords>, then store it in the
+Keychain (it is never written to a file):
+
+```sh
+security add-generic-password -U -s desktop-widget-gmail -a you@gmail.com -w
+```
+
+Without it, Gmail falls back to a header-based promo filter through Mail.app. iCloud has no tabs, so it always uses that filter.
+
 ## Customize
 
 All widgets are generated from **`build_widgets.py`**, so edit it and run `python3 ~/.stark/build_widgets.py`.
@@ -47,7 +56,7 @@ All widgets are generated from **`build_widgets.py`**, so edit it and run `pytho
 - **Layout:** the `POS` grid at the top (laid out for a 1470×956 pt screen)
 - **Stocks:** `SPARK` (main panel) and `MOVERS` in `market.py`
 - **Weather location:** `LAT`/`LON` in `weather.sh`
-- **Excluded mail accounts:** `mail.sh` and `mail-sync.sh`
+- **Promo filter rules (iCloud):** `BULK`, `KEEP` and `PROMO_FROM` in `mail.sh`
 
 ## Files
 
@@ -58,7 +67,8 @@ weather.sh         Open-Meteo forecast
 system.sh          CPU / memory / disk / battery
 network.sh         IP, throughput, service latency
 batcave.sh         git project status + commit activity
-mail.sh            unread mail from Mail.app
+mail.sh            unread Primary mail from Mail.app
+gmail_primary.py   Gmail's real Primary tab over IMAP (app password from Keychain)
 mail-sync.sh       syncs Mail.app accounts (run by launchd)
 launchd/           mail-sync agents (timer + network change)
 stark.zsh          terminal theme

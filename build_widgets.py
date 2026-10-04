@@ -607,7 +607,7 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── MAIL ─────────────────────────
-widget("mail", r'''// Unread emails from every Mail.app account (iCloud, Gmail…). Click to open in Mail.
+widget("mail", r'''// Unread Primary emails (promotions filtered out by mail.sh). Click to open in Mail.
 import { run } from "uebersicht";
 export const command = "~/.stark/mail.sh";
 export const refreshFrequency = 30 * 1000;
@@ -626,35 +626,59 @@ export const className = `
   .hint { position:absolute; left:0; right:0; bottom:14px; text-align:center; font-size:10px; color:#6f665f }
   .hint b { color:#f87171; font-weight:600 }
   .empty b { color:#ffb35c; font-weight:600 }
+  .sec { display:flex; align-items:center; gap:7px; padding:7px 9px 3px; font-size:9.5px; font-weight:700; letter-spacing:.12em }
+  .sec .line { flex:1; height:1px; background:rgba(255,255,255,.07) }
+  .sec .n { color:#8c8178; font-weight:600; letter-spacing:.06em }
+  .none { padding:6px 9px 8px; font-size:11px; color:#6f665f }
+  .tabs { display:flex; gap:4px; margin:0 14px 2px; padding:3px; border-radius:9px; background:rgba(0,0,0,.18) }
+  .tab { flex:1; display:flex; justify-content:center; align-items:center; gap:6px; height:22px; border-radius:6px; cursor:pointer;
+         font-size:9.5px; font-weight:700; letter-spacing:.1em; color:#8c8178 }
+  .tab:hover { color:#e6dcd2 } .tab.on { background:rgba(255,255,255,.08); color:#fff7ee }
+  .tab i { font-style:normal; font-weight:600; color:#6f665f } .tab.on i { color:#ffb35c }
 `;
+// Account picker (Gmail / iCloud) — kept in widget state and remembered across restarts.
+const savedPick = () => { try { return localStorage.getItem("mail-pick") || "Gmail"; } catch (e) { return "Gmail"; } };
+export const initialState = { output: "", pick: savedPick() };
+export const updateState = (ev, prev) => ev.type === "PICK" ? { ...prev, pick: ev.pick } : { ...prev, output: ev.output, error: ev.error };
 const ACC = a => /gmail|google/i.test(a) ? ["GMAIL", "#f87171", "rgba(248,113,113,.12)"] : /icloud/i.test(a) ? ["ICLOUD", "#7fdcff", "rgba(127,220,255,.1)"] : [a.toUpperCase().slice(0, 8), "#ffb35c", "rgba(255,179,92,.1)"];
 const name = f => (f || "").replace(/\s*<.*>\s*$/, "").replace(/^"|"$/g, "") || f;
 const when = d => { const t = new Date(d), now = new Date();
   return t.toDateString() === now.toDateString() ? t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
     : (now - t) < 6 * 864e5 ? t.toLocaleDateString("en-GB", { weekday: "short" }) : t.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
-export const render = ({ output }) => {
+export const render = ({ output, pick }, dispatch) => {
   let m = null; try { m = JSON.parse(output); } catch (e) {}
+  const choose = p => { try { localStorage.setItem("mail-pick", p); } catch (e) {} dispatch({ type: "PICK", pick: p }); };
   const mail = m ? m.mail.filter(x => !x.read).sort((a, b) => new Date(b.d) - new Date(a.d)) : [];
   const accs = m ? m.accounts || [] : [];
   const unread = m ? m.unread || 0 : 0;
-  const hasGmail = accs.some(a => /gmail|google/i.test(a));
+  const shown = accs.includes(pick) ? [pick] : accs.slice(0, 1);
   return (
     <div>
       <header><span style={{ color: "#ffb35c" }}>✉</span><h1>MAIL</h1>
-        <span className="sub"><b>{unread}</b> UNREAD · {accs.map(a => ACC(a)[0]).join(" + ") || "MAIL"}</span></header>
+        <span className="sub"><b>{unread}{m && m.more ? "+" : ""}</b> UNREAD IN PRIMARY</span></header>
       {!m ? <div className="empty">Checking Mail…</div>
         : !m.running ? <div className="empty">Open the <b>Mail</b> app to see your latest emails here.</div>
-        : !mail.length ? <div className="empty">✓ Inbox zero<br /><span className="dim">No unread emails right now.</span></div>
-        : <div className="list">
-          {mail.slice(0, 5).map(x => { const [tag, c, bg] = ACC(x.acc); return (
-            <div className={"it" + (x.read ? "" : " unread")} key={x.id + x.acc}
-                 onClick={() => run(`open "message://%3c${encodeURIComponent(x.id)}%3e"`)}>
-              <span className="dot" style={{ background: x.read ? "transparent" : "#ffb35c", boxShadow: x.read ? "none" : "0 0 6px #ffb35c" }} />
-              <span className="from">{name(x.from)}</span>
-              <span className="t num"><span className="acc" style={{ color: c, background: bg }}>{tag}</span>{when(x.d)}</span>
-              <span className="subj">{x.subj || "(no subject)"}</span>
-            </div>); })}
+        : <div>
+        {accs.length > 1 && <div className="tabs">
+          {accs.map(p => <span key={p} className={"tab" + (shown[0] === p ? " on" : "")} onClick={() => choose(p)}>
+            {ACC(p)[0]}<i>{(m.counts || {})[p] ?? 0}</i></span>)}
         </div>}
+        <div className="list">
+          {shown.map(a => { const [tag, c, bg] = ACC(a), items = mail.filter(x => x.acc === a), n = (m.counts || {})[a] ?? items.length;
+            return <div key={a}>
+              <div className="sec"><span className="acc" style={{ color: c, background: bg }}>{tag}</span>
+                <span className="n">{n} UNREAD</span><span className="line" /></div>
+              {!items.length ? <div className="none">✓ Nothing new in Primary</div>
+                : items.slice(0, 4).map(x => (
+                <div className={"it" + (x.read ? "" : " unread")} key={x.id + x.acc}
+                     onClick={() => run(`open "message://%3c${encodeURIComponent(x.id)}%3e"`)}>
+                  <span className="dot" style={{ background: x.read ? "transparent" : c, boxShadow: x.read ? "none" : `0 0 6px ${c}` }} />
+                  <span className="from">{name(x.from)}</span>
+                  <span className="t num">{when(x.d)}</span>
+                  <span className="subj">{x.subj || "(no subject)"}</span>
+                </div>))}
+            </div>; })}
+        </div></div>}
     </div>
   );
 };''')

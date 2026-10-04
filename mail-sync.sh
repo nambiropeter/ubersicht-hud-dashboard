@@ -23,7 +23,7 @@ out=$(osascript <<'AS' 2>&1
 tell application "Mail"
   check for new mail
   set synced to {}
-  set names to name of every account whose enabled is true and name does not contain "Google" and name does not contain "Gmail"
+  set names to name of every account whose enabled is true
   repeat with n in names
     try
       synchronize with account (contents of n)
