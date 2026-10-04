@@ -1,6 +1,6 @@
 """Builds the Übersicht desktop dashboard from one shared layout grid.
 Run: python3 ~/.stark/build_widgets.py   (then Übersicht reloads automatically)"""
-import os, shutil
+import os, re, shutil, urllib.parse
 
 W = os.path.expanduser("~/Library/Application Support/Übersicht/widgets")
 # Übersicht runs widgets with a minimal PATH, so bake in the absolute python3 path at build time
@@ -18,21 +18,45 @@ POS = {
 }
 
 SHARED = """
-  font: 12px -apple-system, "SF Pro Text", Helvetica, sans-serif; color: #f3ece6;
+  font: 600 13px Rajdhani, "SF Pro Text", -apple-system, sans-serif; color: #dff6ff;
   -webkit-user-select: none; user-select: none; cursor: default; box-sizing: border-box;
-  background: linear-gradient(160deg, rgba(36,27,22,.84), rgba(14,11,10,.88));
-  backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%);
-  border: 1px solid rgba(255,214,170,.14); border-radius: 18px;
-  box-shadow: 0 18px 50px rgba(40,15,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
-  overflow: hidden;
+  background:
+    radial-gradient(240px circle at var(--mx, -999px) var(--my, -999px), rgba(190,250,255,.16), transparent 65%),
+    linear-gradient(180deg, transparent 0%, rgba(62,232,255,.08) 50%, transparent 100%) 0 -120% / 100% 40% no-repeat,
+    linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,0) 28%),
+    repeating-linear-gradient(0deg, rgba(62,232,255,.03) 0 1px, transparent 1px 3px),
+    linear-gradient(rgba(62,232,255,.03) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(90deg, rgba(62,232,255,.03) 1px, transparent 1px) 0 0 / 24px 24px,
+    linear-gradient(160deg, rgba(6,24,36,.55), rgba(2,8,14,.70));
+  animation: scan 7s linear infinite;
+  backdrop-filter: blur(30px) saturate(170%) brightness(.38); -webkit-backdrop-filter: blur(30px) saturate(170%) brightness(.38);
+  border: 1px solid rgba(190,245,255,.22); border-radius: 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.45),
+    inset 1px 0 0 rgba(255,255,255,.07), inset -1px 0 0 rgba(255,255,255,.04),
+    inset 0 0 36px rgba(62,232,255,.06),
+    0 0 26px rgba(62,232,255,.14), 0 14px 40px rgba(0,0,0,.35);
+  overflow: hidden; transition: box-shadow .25s, transform .25s;
+  &:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.34), inset 0 -1px 0 rgba(0,0,0,.45), inset 0 0 36px rgba(62,232,255,.08),
+            0 0 34px rgba(62,232,255,.26), 0 18px 48px rgba(0,0,0,.4) }
+  &.dragging { transform: scale(1.015); transition: box-shadow .25s; box-shadow: 0 0 0 1px rgba(62,232,255,.6), 0 0 44px rgba(62,232,255,.4), 0 26px 60px rgba(0,0,0,.5) }
+  &.dragging header { cursor: grabbing }
+  @keyframes scan { to { background-position: 0 0, 0 260%, 0 0, 0 0, 0 0, 0 0, 0 0 } }
+  &::before, &::after { content:""; position:absolute; width:18px; height:18px; pointer-events:none; z-index:2 }
+  &::before { top:6px; left:6px; border-top:2px solid #3ee8ff; border-left:2px solid #3ee8ff; filter: drop-shadow(0 0 4px #3ee8ff) }
+  &::after { bottom:6px; right:6px; border-bottom:2px solid #ff4b3a; border-right:2px solid #ff4b3a; filter: drop-shadow(0 0 5px #ff4b3a) }
   * { box-sizing: border-box }
-  header { display:flex; align-items:center; gap:9px; height:42px; padding:0 16px; border-bottom:1px solid rgba(255,214,170,.08) }
-  h1 { margin:0; font-size:11px; letter-spacing:.24em; font-weight:700; color:#e6dcd2 }
-  .sub { margin-left:auto; font-size:10px; letter-spacing:.08em; color:#8c8178; white-space:nowrap }
-  .sub b { color:#ffb35c; font-weight:600 }
-  .up { color:#4ade80 } .dn { color:#f87171 } .muted { color:#a39a92 } .dim { color:#6f665f }
-  .num { font-variant-numeric: tabular-nums }
-  .lbl { font-size:10px; letter-spacing:.2em; color:#8c8178; font-weight:600 }
+  header { position:relative; display:flex; align-items:center; gap:9px; height:42px; padding:0 16px; cursor: grab;
+           background: linear-gradient(90deg, rgba(62,232,255,.10), transparent 70%) }
+  header::after { content:""; position:absolute; left:0; right:0; bottom:0; height:1px; background: linear-gradient(90deg, #3ee8ff, rgba(62,232,255,.25) 40%, transparent) }
+  h1 { margin:0; white-space:nowrap; font: 700 10.5px Orbitron, "SF Pro Display", sans-serif; letter-spacing:.28em; color:#bff6ff; text-shadow: 0 0 8px rgba(62,232,255,.7) }
+  h1::before { content:"◢ "; color:#ffc94a; text-shadow: 0 0 6px #ffc94a }
+  .sub { margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis; font: 600 10px Rajdhani, sans-serif; letter-spacing:.16em; color:#5f8a99; white-space:nowrap }
+  .sub b { color:#ffc94a; font-weight:700; text-shadow: 0 0 6px rgba(255,201,74,.6) }
+  .up { color:#39ff9f; text-shadow: 0 0 6px rgba(57,255,159,.45) } .dn { color:#ff3b4e; text-shadow: 0 0 6px rgba(255,59,78,.45) }
+  .muted { color:#7fa9b8 } .dim { color:#46707f }
+  .num { font-family: "Share Tech Mono", "SF Mono", Menlo, monospace; font-weight:400; letter-spacing:.02em }
+  .lbl { font: 700 9.5px Orbitron, sans-serif; letter-spacing:.2em; color:#5f8a99 }
 """
 
 AGO = """const ago = d => {
@@ -91,12 +115,80 @@ const session = (ex, now) => {
 };"""
 
 
+# ── Sci-fi HUD palette: holographic cyan, Stark gold, neon green/red ──
+THEME = [
+    ("rgba(255,179,92,", "rgba(62,232,255,"), ("rgba(255,214,170,", "rgba(62,232,255,"),
+    ("rgba(74,222,128,", "rgba(57,255,159,"), ("rgba(248,113,113,", "rgba(255,59,78,"),
+    ("rgba(36,27,22,1)", "rgba(4,16,24,1)"),
+    ("#ffb35c", "#3ee8ff"), ("#4ade80", "#39ff9f"), ("#f87171", "#ff3b4e"), ("#7fdcff", "#6fe8ff"),
+    ("#fff7ee", "#e8fbff"), ("#f3ece6", "#dff6ff"), ("#e6dcd2", "#cfeffa"), ("#d9cfc6", "#b8dce8"),
+    ("#a39a92", "#7fa9b8"), ("#8c8178", "#5f8a99"), ("#6f665f", "#46707f"), ("#4a403a", "#1e3b47"),
+    ("#d9b48a", "#ffc94a"), ("#a78bfa", "#b388ff"), ("#c4a1ff", "#b388ff"),
+]
+
+HUD = """// Drag a panel by its header to move it (remembered); double-click the header to reset. Cursor light for the glass.
+const hud = name => el => {
+  if (!el) return; const box = el.parentElement; if (!box || box.__hud) return; box.__hud = true;
+  const key = "hud-pos:" + name, anywhere = name === "clock";
+  try { const p = JSON.parse(localStorage.getItem(key)); if (p) { box.style.left = p.x + "px"; box.style.top = p.y + "px"; } } catch (e) {}
+  box.addEventListener("mousemove", e => { const r = box.getBoundingClientRect();
+    box.style.setProperty("--mx", (e.clientX - r.left) + "px"); box.style.setProperty("--my", (e.clientY - r.top) + "px"); });
+  box.addEventListener("mouseleave", () => box.style.setProperty("--mx", "-999px"));
+  box.addEventListener("mousedown", e => {
+    if (e.button !== 0 || !(anywhere || e.target.closest("header"))) return;
+    e.preventDefault();
+    const sx = e.clientX, sy = e.clientY, ox = box.offsetLeft, oy = box.offsetTop;
+    window.__hudZ = (window.__hudZ || 10) + 1; box.style.zIndex = window.__hudZ; box.classList.add("dragging");
+    const snap = v => Math.round(v / 4) * 4;
+    const mv = ev => {
+      box.style.left = snap(Math.max(0, Math.min(window.innerWidth - box.offsetWidth, ox + ev.clientX - sx))) + "px";
+      box.style.top = snap(Math.max(0, Math.min(window.innerHeight - 40, oy + ev.clientY - sy))) + "px"; };
+    const up = () => { document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
+      box.classList.remove("dragging");
+      if (box.offsetLeft !== ox || box.offsetTop !== oy) localStorage.setItem(key, JSON.stringify({ x: box.offsetLeft, y: box.offsetTop })); };
+    document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
+  });
+  box.addEventListener("dblclick", e => { if (!(anywhere || e.target.closest("header"))) return;
+    localStorage.removeItem(key); box.style.left = ""; box.style.top = ""; });
+};"""
+
+# ── Stark armour HUD: amber holograms on smoked-bronze glass (blends with a warm wallpaper) ──
+WARM = [
+    ("rgba(190,250,255,", "rgba(255,226,180,"), ("rgba(190,245,255,", "rgba(255,220,170,"),
+    ("rgba(6,24,36,.55)", "rgba(34,15,6,.50)"), ("rgba(2,8,14,.70)", "rgba(12,5,2,.68)"), ("rgba(4,16,24,1)", "rgba(30,14,6,1)"),
+    ("rgba(62,232,255,", "rgba(255,170,64,"), ("#3ee8ff", "#ffb03f"),
+    ("rgba(255,201,74,", "rgba(255,214,128,"), ("#ffc94a", "#ffd680"),
+    ("#bff6ff", "#ffe0ad"), ("#dff6ff", "#fff1dc"), ("#e8fbff", "#fff6e8"), ("#cfeffa", "#f6e2c6"), ("#b8dce8", "#e6c9a4"),
+    ("#7fa9b8", "#c39d74"), ("#5f8a99", "#a4805a"), ("#46707f", "#7a5c40"), ("#1e3b47", "#4a3220"),
+]
+
+# ── HUD cursors (SVG crosshairs) ──
+def _cursor(color, size=28):
+    c = size // 2
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}">'
+           f'<g fill="none" stroke="{color}" stroke-width="1.6">'
+           f'<circle cx="{c}" cy="{c}" r="5.5"/>'
+           f'<path d="M{c} 1v6M{c} {size-7}v6M1 {c}h6M{size-7} {c}h6"/></g>'
+           f'<circle cx="{c}" cy="{c}" r="1.6" fill="{color}"/></svg>')
+    return f'url("data:image/svg+xml,{urllib.parse.quote(svg)}") {c} {c}'
+CURSOR = _cursor("#ffb03f") + ", crosshair"
+CURSOR_HOT = _cursor("#ff4b3a") + ", pointer"
+
 def widget(name, body):
     x, y, w, h = POS.get(name, (0, 0, 0, 0)); y += DY
     body = (body.replace("%%SHARED%%", SHARED)
                 .replace("%%POS%%", f"left: {x}px; top: {y}px; width: {w}px; height: {h}px;")
                 .replace("%%PY%%", PY).replace("%%AGO%%", AGO).replace("%%SPARK%%", SPARK)
                 .replace("%%FMT%%", FMT).replace("%%HOURS%%", HOURS))
+    for old, new in THEME:
+        body = body.replace(old, new)
+    for old, new in WARM:
+        body = body.replace(old, new)
+    body = body.replace("cursor: default;", f"cursor: {CURSOR};").replace("cursor:pointer", f"cursor:{CURSOR_HOT}")
+    if name != "aa-links":
+        body = re.sub(r"(return \(\s*<div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', body)
+        body = re.sub(r"(return <div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', body)
+        body = body.replace("\nexport const render", "\n" + HUD + "\nexport const render", 1)
     with open(os.path.join(W, name + ".jsx"), "w") as f:
         f.write(body + "\n")
 
@@ -107,15 +199,15 @@ export const command = "date +%s";
 export const refreshFrequency = 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  padding: 18px 20px;
+  padding: 18px 20px; cursor: grab;
   .time { display:flex; align-items:baseline; gap:8px }
-  .time b { font-size:60px; font-weight:200; letter-spacing:-.02em; line-height:1; color:#fff7ee }
-  .time span { font-size:18px; font-weight:300; color:#ffb35c }
-  .date { margin-top:8px; font-size:14px; color:#e6dcd2 }
-  .greet { margin-top:2px; font-size:12px; color:#8c8178 }
+  .time b { font: 600 54px Orbitron, sans-serif; letter-spacing:.02em; line-height:1; color:#e8fbff; text-shadow: 0 0 18px rgba(62,232,255,.65) }
+  .time span { font: 500 18px Orbitron, sans-serif; color:#ffc94a; text-shadow: 0 0 8px rgba(255,201,74,.7) }
+  .date { margin-top:10px; font: 600 15px Rajdhani, sans-serif; letter-spacing:.12em; text-transform:uppercase; color:#cfeffa }
+  .greet { margin-top:1px; font-size:12px; letter-spacing:.06em; color:#5f8a99 }
   .ex { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:14px }
-  .cell { background:rgba(255,214,170,.05); border:1px solid rgba(255,214,170,.08); border-radius:10px; padding:7px 9px }
-  .cell .c { font-size:9px; letter-spacing:.16em; color:#8c8178; font-weight:600 }
+  .cell { background:rgba(255,214,170,.05); border:1px solid rgba(255,214,170,.14); border-left:2px solid #ffc94a; border-radius:2px; padding:7px 9px }
+  .cell .c { font: 700 8.5px Orbitron, sans-serif; letter-spacing:.16em; color:#8c8178 }
   .cell .t { font-size:15px; font-weight:500; margin:2px 0 }
   .cell .s { font-size:9.5px; white-space:nowrap }
   .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:5px; vertical-align:1px }
@@ -129,7 +221,7 @@ export const render = () => {
       <div className="time num"><b>{now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</b>
         <span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
       <div className="date">{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
-      <div className="greet">Good {part}, Anthony · J.A.R.V.I.S. online</div>
+      <div className="greet">Good {part}, Anthony · <span style={{ color: "#39ff9f" }}>● J.A.R.V.I.S. ONLINE</span></div>
       <div className="ex">
         {EXCHANGES.map(ex => { const s = session(ex, now); return (
           <div className="cell" key={ex.city}>
@@ -152,13 +244,13 @@ export const className = `
   %%POS%%%%SHARED%%
   .main { display:flex; align-items:center; gap:14px; padding:10px 18px 4px }
   .ico { font-size:44px; line-height:1; filter: drop-shadow(0 4px 12px rgba(255,179,92,.35)) }
-  .temp { font-size:46px; font-weight:200; line-height:1; color:#fff7ee }
+  .temp { font: 500 42px Orbitron, sans-serif; line-height:1; color:#e8fbff; text-shadow: 0 0 14px rgba(62,232,255,.6) }
   .temp sup { font-size:18px; color:#ffb35c; vertical-align: 20px; margin-left:2px }
   .cond { margin-left:auto; text-align:right }
   .cond b { display:block; font-size:15px; font-weight:600 }
   .cond span { display:block; font-size:11px; color:#a39a92; line-height:1.5 }
   .chips { display:flex; gap:6px; padding:4px 16px 10px }
-  .chip { flex:1; text-align:center; font-size:10.5px; padding:5px 0; border-radius:8px; background:rgba(255,214,170,.05); border:1px solid rgba(255,214,170,.08); color:#d9cfc6; white-space:nowrap }
+  .chip { flex:1; text-align:center; font-size:10.5px; padding:5px 0; border-radius:2px; background:rgba(255,214,170,.05); border:1px solid rgba(255,214,170,.12); color:#d9cfc6; white-space:nowrap }
   .days { display:grid; grid-template-columns: repeat(5, 1fr); margin:0 12px; padding-top:8px; border-top:1px solid rgba(255,214,170,.08); text-align:center }
   .d .n { font-size:9.5px; letter-spacing:.14em; color:#8c8178; font-weight:600 }
   .d .i { font-size:17px; margin:3px 0 1px }
@@ -264,7 +356,7 @@ export const className = `
   .flow { stroke-dasharray: 3 5; animation: f 1.2s linear infinite } @keyframes f { to { stroke-dashoffset: -16 } }
   .pulse { animation: p 2.4s ease-in-out infinite } @keyframes p { 50% { opacity:.45 } }
   .rates { margin-left:auto; text-align:right; padding-right:8px }
-  .rate { font-size:22px; font-weight:300; line-height:1.15 } .rate small { font-size:10px; color:#8c8178; margin-left:3px }
+  .rate { font-family:"Share Tech Mono", monospace; font-size:22px; line-height:1.15 } .rate small { font-size:10px; color:#8c8178; margin-left:3px }
   .rl { font-size:9.5px; letter-spacing:.16em; color:#8c8178; font-weight:600; margin-top:8px }
 `;
 const NODES = [[36, 28], [164, 28], [36, 112], [164, 112]];
@@ -281,7 +373,7 @@ export const render = ({ output }) => {
         <svg width="200" height="140" viewBox="0 0 200 140">
           {svcs.map((s, i) => <line key={"l" + i} className="flow" x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={col(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
           <circle cx="100" cy="70" r="16" fill="rgba(36,27,22,1)" stroke="#ffb35c" strokeWidth="1.3" />
-          <text x="100" y="73.5" textAnchor="middle" fontSize="9" fontWeight="700" fill="#ffb35c" letterSpacing="1">MAC</text>
+          <text x="100" y="73.5" textAnchor="middle" fontSize="9" fontWeight="700" fill="#ffb35c" letterSpacing="1" fontFamily="Orbitron">CORE</text>
           {svcs.map((s, i) => { const [x, y] = NODES[i], below = y > 70; return (
             <g key={s.name}>
               <circle className="pulse" cx={x} cy={y} r="4.5" fill={col(s.ms)} style={{ filter: `drop-shadow(0 0 4px ${col(s.ms)})` }} />
@@ -308,15 +400,16 @@ export const className = `
   .hero { padding:14px 18px 0; cursor:pointer }
   .hrow { display:flex; align-items:flex-end; gap:12px }
   .hname { font-size:10px; letter-spacing:.2em; color:#8c8178; font-weight:600 }
-  .hp { font-size:38px; font-weight:250; line-height:1.05; color:#fff7ee }
+  .hp { font-size:40px; line-height:1.05; color:#e8fbff; text-shadow: 0 0 16px rgba(62,232,255,.55) }
   .hc { font-size:15px; font-weight:500; padding-bottom:5px }
   .range { margin-left:auto; text-align:right; font-size:10.5px; color:#a39a92; line-height:1.6; padding-bottom:4px }
   .range b { color:#e6dcd2; font-weight:500 }
   .chart { margin-top:10px }
   .idx { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:14px 16px 0 }
   .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; padding:10px 16px 0 }
-  .tile { background:rgba(255,214,170,.045); border:1px solid rgba(255,214,170,.08); border-radius:12px; padding:9px 11px; cursor:pointer; transition: background .2s }
-  .tile:hover { background:rgba(255,179,92,.10) }
+  .tile { background:rgba(255,214,170,.045); border:1px solid rgba(255,214,170,.08); border-radius:3px; padding:9px 11px; cursor:pointer; transition: all .2s; position:relative }
+  .tile::before { content:""; position:absolute; top:0; left:0; width:8px; height:8px; border-top:1px solid #3ee8ff; border-left:1px solid #3ee8ff }
+  .tile:hover { background:rgba(255,179,92,.10); border-color: rgba(62,232,255,.5); box-shadow: 0 0 14px rgba(62,232,255,.25) }
   .tile .top { display:flex; justify-content:space-between; align-items:baseline }
   .tile .s { font-size:11px; font-weight:700; letter-spacing:.06em; color:#e6dcd2 }
   .tile .c { font-size:10.5px; font-weight:600 }
@@ -400,7 +493,7 @@ export const className = `
   .hm { display:grid; grid-template-rows: repeat(7, 13px); grid-auto-flow: column; grid-auto-columns: 13px; gap:3px; margin-top:8px }
   .hm i { border-radius:3px }
   .stats { flex:1; display:flex; flex-direction:column; justify-content:flex-end; gap:9px; padding-bottom:2px }
-  .st b { display:block; font-size:20px; font-weight:300; color:#fff7ee; line-height:1.1 }
+  .st b { display:block; font-size:20px; color:#e8fbff; line-height:1.1 }
   .st span { font-size:9.5px; letter-spacing:.14em; color:#8c8178; font-weight:600 }
 `;
 const half = [[0,-30],[18,-60],[22,-22],[60,-34],[140,-80],[250,-70],[330,-20],[300,-10],[270,15],[230,10],[200,40],[150,25],[110,55],[70,30],[30,40],[0,90]];
@@ -426,7 +519,7 @@ export const render = ({ output }) => {
   return (
     <div>
       <header><svg width="28" height="13" viewBox="-340 -90 680 190"><polygon points={bat} fill="#ffb35c" /></svg>
-        <h1>BATCAVE</h1><span className="sub"><b>{active}</b> ACTIVE · <b>{total}</b> COMMITS / 12W</span></header>
+        <h1>BATCAVE</h1><span className="sub"><b>{active}</b> ACTIVE · <b>{total}</b> COMMITS</span></header>
       <div className="list">
         {repos.slice(0, 6).map(r => (
           <div className="row" key={r.path} onClick={() => run(`open -a "Visual Studio Code" "${r.path}"`)}>
@@ -579,18 +672,63 @@ v(1180, 308, 328); v(1356, 308, 328)
 v(1180, 616, 636); v(1356, 616, 636)                                    # batcave ↔ ai
 POS["aa-links"] = (0, 0, 0, 0)
 widget("aa-links", '''// Glowing connectors between panels (file name sorts first so it draws behind them).
-export const refreshFrequency = false;
+// Hidden once any panel has been dragged somewhere else (double-click headers to restore the default layout).
+export const command = "true";
+export const refreshFrequency = 2000;
+const CURSOR_CSS = `
+  #hud-ring { position:fixed; left:0; top:0; width:0; height:0; pointer-events:none; z-index:99999; opacity:0; transition:opacity .25s }
+  #hud-ring.on { opacity:1 }
+  #hud-ring i, #hud-ring b { position:absolute; border-radius:50%; transition: all .22s ease }
+  #hud-ring i { left:-18px; top:-18px; width:36px; height:36px; border:1px dashed rgba(62,232,255,.75);
+                box-shadow: 0 0 12px rgba(62,232,255,.35), inset 0 0 10px rgba(62,232,255,.15); animation: hudspin 7s linear infinite }
+  #hud-ring b { left:-11px; top:-11px; width:22px; height:22px; border:1.6px solid #3ee8ff; border-left-color:transparent; border-right-color:transparent;
+                filter: drop-shadow(0 0 4px #3ee8ff); animation: hudspin 1.4s linear infinite reverse }
+  #hud-ring.hot i { left:-25px; top:-25px; width:50px; height:50px; border-color:rgba(255,75,58,.9); box-shadow: 0 0 18px rgba(255,75,58,.5) }
+  #hud-ring.hot b { border-top-color:#ff4b3a; border-bottom-color:#ff4b3a; filter: drop-shadow(0 0 5px #ff4b3a) }
+  #hud-ring.grab i { border-radius:6px; border-style:solid; animation:none; transform: rotate(45deg) }
+  #hud-ring.down b { left:-6px; top:-6px; width:12px; height:12px }
+  @keyframes hudspin { to { transform: rotate(360deg) } }
+  .hud-ripple { position:fixed; width:12px; height:12px; margin:-6px 0 0 -6px; border:2px solid #3ee8ff; border-radius:50%;
+                pointer-events:none; z-index:99998; box-shadow: 0 0 10px #3ee8ff; animation: hudrip .65s ease-out forwards }
+  .hud-ripple.hot { border-color:#ff4b3a; box-shadow: 0 0 10px #ff4b3a }
+  @keyframes hudrip { to { transform: scale(7); opacity:0 } }
+`;
+const installCursor = () => {
+  if (window.__hudCursor) return; window.__hudCursor = true;
+  const st = document.createElement("style"); st.textContent = CURSOR_CSS; document.head.appendChild(st);
+  const ring = document.createElement("div"); ring.id = "hud-ring"; ring.innerHTML = "<i></i><b></b>"; document.body.appendChild(ring);
+  let x = -200, y = -200, tx = -200, ty = -200, hot = false;
+  document.addEventListener("mousemove", e => {
+    tx = e.clientX; ty = e.clientY; ring.classList.add("on");
+    const t = e.target.closest ? e.target.closest(".row,.tile,.it,.hero,header") : null;
+    hot = !!t && !t.matches("header");
+    ring.classList.toggle("hot", hot); ring.classList.toggle("grab", !!t && t.matches("header"));
+  });
+  document.addEventListener("mouseout", e => { if (!e.relatedTarget) ring.classList.remove("on"); });
+  document.addEventListener("mousedown", e => {
+    ring.classList.add("down");
+    const r = document.createElement("div"); r.className = "hud-ripple" + (hot ? " hot" : "");
+    r.style.left = e.clientX + "px"; r.style.top = e.clientY + "px"; document.body.appendChild(r); setTimeout(() => r.remove(), 700);
+  });
+  document.addEventListener("mouseup", () => ring.classList.remove("down"));
+  const loop = () => { x += (tx - x) * 0.24; y += (ty - y) * 0.24; ring.style.transform = `translate(${x}px, ${y}px)`; requestAnimationFrame(loop); };
+  loop();
+};
+const moved = () => { try { return Object.keys(localStorage).some(k => k.startsWith("hud-pos:")); } catch (e) { return false; } };
 export const className = `
   left: 0; top: 0; width: 100%; height: 100%; pointer-events: none;
   .flow { stroke-dasharray: 3 4; animation: f 1.6s linear infinite } @keyframes f { to { stroke-dashoffset: -14 } }
   circle { animation: p 2.6s ease-in-out infinite } @keyframes p { 50% { opacity:.4 } }
 `;
-export const render = () => (
+const FONTS = "@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700&family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');";
+export const render = () => { installCursor(); return (
   <svg width="100%" height="100%" viewBox="0 0 1470 923" preserveAspectRatio="none">
+    <style>{FONTS}</style>
+    {!moved() && <g>
     <g stroke="#ffb35c" strokeWidth="1.4" fill="#ffb35c" style={{ filter: "drop-shadow(0 0 4px rgba(255,179,92,.9))" }}>
       ''' + "\n      ".join(links) + '''
-    </g>
+    </g></g>}
   </svg>
-);''')
+); };''')
 
 print("wrote", sorted(f for f in os.listdir(W) if f.endswith(".jsx")))

@@ -4,6 +4,10 @@ A macOS desktop dashboard built on [Übersicht](https://tracesof.net/uebersicht/
 
 Everything is plain scripts: no API keys, no paid services, no AI calls.
 
+**Look and feel:** a Stark-armour HUD. Amber holographic type (Orbitron, Rajdhani, Share Tech Mono) sits on smoked "liquid glass" panels with a cursor-following light, scanlines, a sweeping scanner and glowing corner brackets. Over the widgets the cursor becomes a crosshair with a trailing targeting ring and click ripples.
+
+**Interactive:** drag any panel by its header (or the clock from anywhere) to move it. Positions are remembered. Double-click a header to send that panel back to its default spot. Click stocks, headlines, projects or emails to open them.
+
 ## Widgets
 
 | Widget | Shows | Data source | Refresh |
