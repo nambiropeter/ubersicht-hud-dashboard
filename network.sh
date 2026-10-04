@@ -8,7 +8,7 @@ b1=($(netstat -ib -I $dev | awk 'NR==2{print $7, $10}'))
 tmp=$(mktemp -d)
 # order = node slot in the Connections panel
 i=0
-for pair in "Claude api.anthropic.com" "GitHub github.com" "Apple www.apple.com" "Supabase supabase.com" "Vercel vercel.com" "Yahoo finance.yahoo.com" "Netflix www.netflix.com" "Google www.google.com"; do
+for pair in "Claude api.anthropic.com" "GitHub github.com" "Apple www.apple.com" "Meta www.meta.com" "TikTok www.tiktok.com" "Yahoo finance.yahoo.com" "Netflix www.netflix.com" "Google www.google.com"; do
   (n=${pair%% *}; h=${pair#* }; t=$(curl -o /dev/null -s -m 3 -w '%{time_connect}' https://$h); print "$n $t" > $tmp/$i-$n) &
   ((i++))
 done
