@@ -9,3 +9,7 @@ widgets-old/
 *.png
 __pycache__/
 .DS_Store
+wifi
+.speed.*
+.pubip.*
+.ssid*

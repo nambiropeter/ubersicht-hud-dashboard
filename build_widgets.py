@@ -2,6 +2,9 @@
 Run: python3 ~/.stark/build_widgets.py   (then Übersicht reloads automatically)"""
 import os, re, shutil, urllib.parse
 
+_S = os.path.expanduser("~/.stark")
+if not os.path.exists(f"{_S}/wifi") or os.path.getmtime(f"{_S}/wifi.swift") > os.path.getmtime(f"{_S}/wifi"):
+    os.system(f"swiftc -O {_S}/wifi.swift -o {_S}/wifi")
 W = os.path.expanduser("~/Library/Application Support/Übersicht/widgets")
 # Übersicht runs widgets with a minimal PATH, so bake in the absolute python3 path at build time
 PY = shutil.which("python3") or "/usr/bin/python3"
@@ -241,7 +244,7 @@ const hud = name => el => {
   box.addEventListener("mouseleave", () => box.style.setProperty("--mx", "-999px"));
   const nearest = (v, cands) => { let best = v, d = MAG; for (const c of cands) { const k = Math.abs(c - v); if (k < d) { d = k; best = c; } } return best; };
   box.addEventListener("mousedown", e => {
-    if (e.button !== 0 || !(anywhere || e.target.closest("header"))) return;
+    if (e.button !== 0 || e.target.closest(".seg, .tabs") || !(anywhere || e.target.closest("header"))) return;
     e.preventDefault();
     const sx = e.clientX, sy = e.clientY, ox = box.offsetLeft, oy = box.offsetTop, W = box.offsetWidth, H = box.offsetHeight;
     const xs = [32, window.innerWidth - W - 32, home.x], ys = [20, window.innerHeight - H - 20, home.y];
@@ -262,7 +265,7 @@ const hud = name => el => {
       else localStorage.setItem(key, JSON.stringify({ x: box.offsetLeft, y: box.offsetTop })); };
     document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up);
   });
-  box.addEventListener("dblclick", e => { if (!(anywhere || e.target.closest("header"))) return;
+  box.addEventListener("dblclick", e => { if (e.target.closest(".seg, .tabs") || !(anywhere || e.target.closest("header"))) return;
     localStorage.removeItem(key); place(home.x, home.y, true); });
 };"""
 
@@ -473,7 +476,9 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── CONNECTIONS ─────────────────────────
-widget("connections", r'''// Live connections: throughput and latency to the services you use.
+widget("connections", r'''// Connections, two views (toggle in the header, remembered):
+// LIVE = throughput and latency to the services you use; LINK = Wi-Fi link, VPN + public IP, last speed test.
+import { run } from "uebersicht";
 export const command = "~/.stark/network.sh";
 export const refreshFrequency = 30 * 1000;
 export const className = `
@@ -484,34 +489,111 @@ export const className = `
   .rates { margin-left:auto; text-align:right; padding-right:8px }
   .rate { font: 200 25px -apple-system, sans-serif; line-height:1.15 } .rate small { font-size:10px; color:#8c8178; margin-left:3px }
   .rl { font-size:9.5px; letter-spacing:.16em; color:#8c8178; font-weight:600; margin-top:8px }
+  .lip { font-size:9.5px; color:#6f665f; margin-top:9px; letter-spacing:.04em }
+  .seg { display:inline-flex; gap:2px; padding:2px; border-radius:7px; background:rgba(0,0,0,.18); vertical-align:middle }
+  .seg span { padding:2px 7px; border-radius:5px; font-size:8.5px; font-weight:700; letter-spacing:.12em; color:#8c8178; cursor:pointer }
+  .seg span:hover { color:#e6dcd2 } .seg .on { background:rgba(255,255,255,.08); color:#fff7ee }
+  .vpn { font-size:8.5px; font-weight:700; letter-spacing:.1em; padding:2px 6px; border-radius:5px; margin-right:6px; vertical-align:middle;
+         color:#4ade80; background:rgba(74,222,128,.12) }
+  .link { padding:2px 20px 0 }
+  .row { display:grid; grid-template-columns: 50px 1fr auto; align-items:baseline; padding:6px 0 7px; border-top:1px solid rgba(255,255,255,.05) }
+  .row:first-child { border-top:none }
+  .k { font-size:9px; font-weight:700; letter-spacing:.14em; color:#8c8178 }
+  .v { font-size:13px; color:#f3ece6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .v small { font-size:10px; color:#8c8178; margin-left:2px }
+  .d { grid-column: 2 / span 2; font-size:10.5px; color:#8c8178; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .bars { display:inline-flex; align-items:flex-end; gap:2px; height:11px; margin-right:6px }
+  .bars i { width:3px; border-radius:1px; background:rgba(255,255,255,.12) }
+  .r { font-size:10.5px; color:#a39a92; text-align:right }
+  .go { margin-left:6px; padding:1px 6px; border-radius:5px; background:rgba(255,255,255,.06); color:#e6dcd2; cursor:pointer }
+  .go:hover { background:rgba(255,255,255,.12) } .go.busy { color:#ffb35c; cursor:default }
 `;
 const NODES = [[36, 28], [164, 28], [36, 112], [164, 112]];
+const savedView = () => { try { return localStorage.getItem("conn-view") || "LIVE"; } catch (e) { return "LIVE"; } };
+export const initialState = { output: "", view: savedView() };
+export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: ev.view }
+  : ev.type === "SPEED" ? { ...prev, speed: ev.speed, testing: ev.testing } : { ...prev, output: ev.output, error: ev.error };
 const problem = n => (window.__offline = n.ip === "offline" || n.services.every(x => !x.ms)) ? "No internet" : null;
 const col = ms => !ms ? "#6f665f" : ms < 150 ? "#4ade80" : ms < 450 ? "#ffb35c" : "#f87171";
 const rate = b => b > 1048576 ? [(b / 1048576).toFixed(1), "MB/s"] : [(b / 1024).toFixed(0), "KB/s"];
-export const render = ({ output }) => {
-  let n = null; try { n = JSON.parse(output); } catch (e) {}
+const mbps = b => b >= 1e8 ? Math.round(b / 1e6) : (b / 1e6).toFixed(b >= 1e7 ? 0 : 1);
+const hm = t => new Date(t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+// signal: 4 bars ≥ -55 dBm, 3 ≥ -65, 2 ≥ -75, else 1
+const bars = rssi => rssi >= -55 ? 4 : rssi >= -65 ? 3 : rssi >= -75 ? 2 : 1;
+const sigCol = n => n >= 3 ? "#4ade80" : n === 2 ? "#ffb35c" : "#f87171";
+
+const Live = ({ n }) => {
   const svcs = n ? n.services : [];
   const [dv, du] = n ? rate(n.down) : ["—", ""], [uv, uu] = n ? rate(n.up) : ["—", ""];
   return (
-    <div>
-      <header><span style={{ color: "#ffb35c" }}>⟡</span><h1>CONNECTIONS</h1><span className="sub">{n ? <span>{n.dev.toUpperCase()} · <b>{n.ip}</b></span> : "…"}</span></header>
-      <div className="body">
-        <svg width="200" height="140" viewBox="0 0 200 140">
-          {svcs.map((s, i) => <line key={"l" + i} className="flow" x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={col(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
-          <circle cx="100" cy="70" r="16" fill="rgba(36,27,22,1)" stroke="#ffb35c" strokeWidth="1.3" />
-          <text x="100" y="73.5" textAnchor="middle" fontSize="7" fontWeight="700" fill="#ffb35c" letterSpacing=".5" fontFamily="Orbitron">CORE</text>
-          {svcs.map((s, i) => { const [x, y] = NODES[i], below = y > 70; return (
-            <g key={s.name}>
-              <circle className="pulse" cx={x} cy={y} r="4.5" fill={col(s.ms)} style={{ filter: `drop-shadow(0 0 4px ${col(s.ms)})` }} />
-              <text x={x} y={below ? y + 16 : y - 9} textAnchor="middle" fontSize="9" fill="#d9cfc6">{s.name} <tspan fill={col(s.ms)}>{s.ms ? s.ms + "ms" : "down"}</tspan></text>
-            </g>); })}
-        </svg>
-        <div className="rates num">
-          <div className="rl">DOWN</div><div className="rate up">↓ {dv}<small>{du}</small></div>
-          <div className="rl">UP</div><div className="rate" style={{ color: "#7fdcff" }}>↑ {uv}<small>{uu}</small></div>
-        </div>
+    <div className="body">
+      <svg width="200" height="140" viewBox="0 0 200 140">
+        {svcs.map((s, i) => <line key={"l" + i} className="flow" x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={col(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
+        <circle cx="100" cy="70" r="16" fill="rgba(36,27,22,1)" stroke="#ffb35c" strokeWidth="1.3" />
+        <text x="100" y="73.5" textAnchor="middle" fontSize="7" fontWeight="700" fill="#ffb35c" letterSpacing=".5" fontFamily="Orbitron">CORE</text>
+        {svcs.map((s, i) => { const [x, y] = NODES[i], below = y > 70; return (
+          <g key={s.name}>
+            <circle className="pulse" cx={x} cy={y} r="4.5" fill={col(s.ms)} style={{ filter: `drop-shadow(0 0 4px ${col(s.ms)})` }} />
+            <text x={x} y={below ? y + 16 : y - 9} textAnchor="middle" fontSize="9" fill="#d9cfc6">{s.name} <tspan fill={col(s.ms)}>{s.ms ? s.ms + "ms" : "down"}</tspan></text>
+          </g>); })}
+      </svg>
+      <div className="rates num">
+        <div className="rl">DOWN</div><div className="rate up">↓ {dv}<small>{du}</small></div>
+        <div className="rl">UP</div><div className="rate" style={{ color: "#7fdcff" }}>↑ {uv}<small>{uu}</small></div>
+        {n && <div className="lip">{n.dev.toUpperCase()} · {n.ip}</div>}
       </div>
+    </div>
+  );
+};
+
+const Link = ({ n, speed, testing, test }) => {
+  const w = (n && n.wifi) || {}, v = n && n.vpn, p = n && n.pub, onWifi = w.rssi !== undefined && w.rssi !== 0;
+  const b = onWifi ? bars(w.rssi) : 0;
+  return (
+    <div className="link">
+      <div className="row">
+        <span className="k">WI‑FI</span>
+        {onWifi ? <span className="v" title={w.ssid ? "" : "macOS hides the network name. Create a Shortcuts shortcut named \"Wi-Fi Name\" with Get Network Details."}>
+            {w.ssid || <span className="muted">Name hidden</span>}</span>
+          : <span className="v muted">{n && n.dev !== "en0" ? "Using " + n.dev.toUpperCase() : "Not connected"}</span>}
+        {onWifi ? <span className="r num"><span className="bars">{[5, 7, 9, 11].map((h, i) =>
+            <i key={i} style={{ height: h, background: i < b ? sigCol(b) : undefined }} />)}</span>{w.rssi} dBm</span> : <span />}
+        {onWifi && <span className="d num">Ch {w.ch} · {w.band} GHz{w.width ? " · " + w.width + " MHz" : ""}{w.phy ? " · Wi‑Fi " + w.phy : ""} · {w.rate} Mbps link</span>}
+      </div>
+      <div className="row">
+        <span className="k">VPN</span>
+        <span className="v">{v ? <span><span className="up">●</span> {v.name}<small>{v.full ? "all traffic" : "split tunnel"}</small></span>
+          : <span><span className="dim">●</span> <span className="muted">Off</span></span>}</span>
+        <span className="r num">{n && n.ip !== "offline" ? <span><span className="dim">LAN </span>{n.ip}</span> : ""}</span>
+        <span className="d num">{p ? (v ? "Exit " : "Public ") + p.ip + " · " + [p.city, p.cc].filter(Boolean).join(", ") + (p.isp ? " · " + p.isp : "") : "Public IP unknown"}</span>
+      </div>
+      <div className="row">
+        <span className="k">SPEED</span>
+        <span className="v num">{speed ? <span><span className="up">↓ {mbps(speed.down)}</span><small>Mbps</small>&nbsp;&nbsp;
+          <span style={{ color: "#7fdcff" }}>↑ {mbps(speed.up)}</span><small>Mbps</small></span> : <span className="muted">No test yet</span>}</span>
+        <span className="r num">{speed ? hm(speed.at) : ""}
+          <span className={"go" + (testing ? " busy" : "")} title="Run a speed test now (~150 MB)" onClick={testing ? null : test}>{testing ? "testing…" : "↻"}</span></span>
+        {speed && <span className="d num">Idle ping {speed.rtt} ms{speed.rpm ? " · under load " + Math.round(60000 / speed.rpm) + " ms" : ""}</span>}
+      </div>
+    </div>
+  );
+};
+
+export const render = ({ output, view, speed: mine, testing: busy }, dispatch) => {
+  let n = null; try { n = JSON.parse(output); } catch (e) {}
+  const pick = v => { try { localStorage.setItem("conn-view", v); } catch (e) {} dispatch({ type: "VIEW", view: v }); };
+  // a test started from the button wins until the regular refresh has a newer result
+  const speed = mine && (!n || !n.speed || mine.at >= n.speed.at) ? mine : n && n.speed;
+  const testing = busy || !!(n && n.testing);
+  const test = () => { dispatch({ type: "SPEED", speed, testing: true });
+    run("~/.stark/speedtest.sh now; cat ~/.stark/.speed.json").then(out => {
+      let s = speed; try { s = JSON.parse(out); } catch (e) {} dispatch({ type: "SPEED", speed: s, testing: false }); }); };
+  return (
+    <div>
+      <header><span style={{ color: "#ffb35c" }}>⟡</span><h1>CONNECTIONS</h1>
+        <span className="sub">{n && n.vpn && <span className="vpn" title={n.vpn.name}>VPN</span>}
+          <span className="seg">{["LIVE", "LINK"].map(v => <span key={v} className={view === v ? "on" : ""} onClick={() => pick(v)}>{v}</span>)}</span></span></header>
+      {view === "LINK" ? <Link n={n} speed={speed} testing={testing} test={test} /> : <Live n={n} />}
     </div>
   );
 };''')
