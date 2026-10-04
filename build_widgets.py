@@ -1034,9 +1034,10 @@ const Nse = ({ pf, dispatch }) => {
           right={<span>Today <b className={t.day >= 0 ? "up" : "dn"}>{kes(t.day, 1)}</b><br />
             {t.paid ? <span>Total gain <b className={t.value >= t.paid ? "up" : "dn"}>{kes(t.value - t.paid, 1)}</b></span> : <span>Prices {pf.asof || "delayed"}</span>}</span>} />
           : <div className="hero on muted" data-sym="PF">No holdings yet. Click + ADD to put in your first stock.</div>}
-        {hs.map(x => <PfHero key={x.sym} k={x.sym} label={<span><b>{x.sym}</b> · {x.name} · {x.shares} SHARES</span>}
-          big={<span><small>KES</small>{kes(x.p)}</span>} ch={x.pct} d={x.hist} ts={x.ts}
-          right={<span>Value <b>{kes(x.value)}</b><br />Today <b className={x.day >= 0 ? "up" : "dn"}>{kes(x.day, 1)}</b>
+        {/* hovering a holding: the big number is what you have in it, and the chart is your stake's value over time */}
+        {hs.map(x => <PfHero key={x.sym} k={x.sym} label={<span><b>MY {x.sym}</b> · {x.name} · {t && t.value ? Math.round(x.value / t.value * 100) : 100}% OF PORTFOLIO</span>}
+          big={<span><small>KES</small>{kes(x.value)}</span>} ch={x.pct} d={x.hist.map(v => v * x.shares)} ts={x.ts}
+          right={<span>{x.shares} shares × <b>{kes(x.p)}</b><br />Today <b className={x.day >= 0 ? "up" : "dn"}>{kes(x.day, 1)}</b>
             {x.cost ? <span><br />Gain <b className={x.p >= x.cost ? "up" : "dn"}>{kes((x.p - x.cost) * x.shares, 1)}</b></span> : null}</span>} />)}
       </div>
       <div className="grid">
