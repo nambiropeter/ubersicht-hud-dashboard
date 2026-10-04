@@ -493,6 +493,10 @@ export const className = `
   .wave.b { animation-delay: 1.3s } .hub.alert .wave { animation-duration: 1.1s } .hub.alert .wave.b { animation-delay: .55s }
   @keyframes wave { from { transform: scale(1); opacity: .7 } to { transform: scale(2.1); opacity: 0 } }
   .hub.alert .ring { animation: beat 1.1s ease-in-out infinite } @keyframes beat { 50% { stroke-width: 2.4 } }
+  .reach { animation: reach 2.4s ease-out infinite; animation-delay: var(--d) }
+  @keyframes reach { 0% { stroke-dashoffset: var(--o); opacity: .9 } 55% { stroke-dashoffset: 0; opacity: .9 } 62% { opacity: .25 } 68% { opacity: .8 } 74% { opacity: .15 } 100% { stroke-dashoffset: 0; opacity: 0 } }
+  .fizz { transform-box: fill-box; transform-origin: center; animation: fizz 2.4s ease-out infinite; animation-delay: var(--d) }
+  @keyframes fizz { 0%, 52% { transform: scale(0); opacity: 0 } 58% { transform: scale(1.4); opacity: 1 } 80% { transform: scale(.6); opacity: .5 } 100% { transform: scale(0); opacity: 0 } }
   .flame { transform-box: fill-box; transform-origin: 50% 100%; animation: burn var(--t) ease-in-out infinite alternate; animation-delay: var(--d) }
   @keyframes burn { 0% { transform: scale(.75, .7) skewX(-6deg); opacity: .75 } 50% { transform: scale(1.05, 1.15) skewX(5deg); opacity: 1 } 100% { transform: scale(.9, .9) skewX(-3deg); opacity: .85 } }
   .ember { animation: ember var(--t) ease-out infinite; animation-delay: var(--d) }
@@ -543,6 +547,13 @@ const sparks = (x, y, c, k) => [0, 1, 2, 3, 4, 5, 6, 7, 8].map(j => {
     style={{ "--dx": (Math.cos(a) * r).toFixed(1) + "px", "--dy": (Math.sin(a) * r).toFixed(1) + "px",
              "--t": (0.7 + (j % 3) * 0.25) + "s", "--d": (j * 0.17 + k * 0.11).toFixed(2) + "s",
              filter: `drop-shadow(0 0 2px ${c})` }} />; });
+// the hub keeps reaching out to a down service: a line stretches 70% of the way, stalls, flickers out and tries again
+const reach = (x, y, c, k) => { const L = Math.hypot(x - 100, y - 70), r = .7, d = (k * 0.37).toFixed(2) + "s";
+  return <g key={"r" + k}>
+    <line className="reach" x1="100" y1="70" x2={x} y2={y} stroke={c} strokeWidth="1.3" strokeLinecap="round"
+      strokeDasharray={`${(L * r).toFixed(1)} ${L.toFixed(1)}`} style={{ "--o": (L * r).toFixed(1) + "px", "--d": d }} />
+    <circle className="fizz" cx={100 + (x - 100) * r} cy={70 + (y - 70) * r} r="2" fill={c} style={{ "--d": d, filter: `drop-shadow(0 0 3px ${c})` }} />
+  </g>; };
 // a burning service: smoke, three flickering flame tongues and embers drifting up; fixed offsets so refreshes don't jump
 const fire = (x, y, k) => <g key={"f" + k} transform={`translate(${x} ${y})`}>
   {[0, 1, 2].map(j => <circle key={"sm" + j} className="smoke" cx={(j - 1) * 2} cy="-6" r="4" fill="#4a4040"
@@ -578,6 +589,7 @@ const Live = ({ n }) => {
           <stop offset="0" stopColor="#fff1b0" /><stop offset=".35" stopColor="#ffb340" /><stop offset=".7" stopColor="#ff5a24" /><stop offset="1" stopColor="#d9261c" stopOpacity="0" />
         </linearGradient></defs>
         {svcs.slice(0, NODES.length).map((s, i) => !s.ms ? null : <line key={"l" + i} className={weak(s.ms) ? "flow weak" : "flow"} x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={c(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
+        {svcs.slice(0, NODES.length).map((s, i) => s.ms ? null : reach(NODES[i][0], NODES[i][1], dead ? "#f87171" : "#a39a92", i))}
         {svcs.slice(0, NODES.length).map((s, i) => weak(s.ms) ? sparks(NODES[i][0], NODES[i][1], c(s.ms), i) : null)}
         {dead && [8, 9, 10].map(k => sparks(100, 70, "#f87171", k))}
         <g className={"hub" + (alert || dead ? " alert" : ok ? " ok" : "")} style={{ "--hub": hub }}>
