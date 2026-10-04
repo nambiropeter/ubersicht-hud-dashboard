@@ -493,6 +493,7 @@ export const className = `
   .wave.b { animation-delay: 1.3s } .hub.alert .wave { animation-duration: 1.1s } .hub.alert .wave.b { animation-delay: .55s }
   @keyframes wave { from { transform: scale(1); opacity: .7 } to { transform: scale(2.1); opacity: 0 } }
   .hub.alert .ring { animation: beat 1.1s ease-in-out infinite } @keyframes beat { 50% { stroke-width: 2.4 } }
+  .hub.ok .ring { animation: glow 2.6s ease-in-out infinite } @keyframes glow { 50% { filter: drop-shadow(0 0 5px #4ade80) } }
   .weak { animation: f .5s linear infinite, flick .35s steps(2) infinite } @keyframes flick { 50% { stroke-opacity: .25 } }
   .spark { animation: spark var(--t) ease-out infinite; animation-delay: var(--d) }
   @keyframes spark { 0% { transform: translate(0, 0); opacity: 1 } 70% { opacity: .8 } 100% { transform: translate(var(--dx), var(--dy)); opacity: 0 } }
@@ -545,15 +546,16 @@ const sigCol = n => n >= 3 ? "#4ade80" : n === 2 ? "#ffb35c" : "#f87171";
 
 const Live = ({ n }) => {
   const svcs = n ? n.services : [];
-  // the hub breathes amber; any weak link speeds it up, and it turns red if a service is down
-  const alert = svcs.some(s => weak(s.ms)), hub = svcs.some(s => !s.ms) ? "#f87171" : "#ffb35c";
+  // the hub pulses green when every link is fast; any weak link turns it amber and speeds it up, red if a service is down
+  const alert = svcs.some(s => weak(s.ms)), ok = svcs.length > 0 && !alert;
+  const hub = svcs.some(s => !s.ms) ? "#f87171" : ok ? "#4ade80" : "#ffb35c";
   const [dv, du] = n ? rate(n.down) : ["—", ""], [uv, uu] = n ? rate(n.up) : ["—", ""];
   return (
     <div className="body">
       <svg width="200" height="140" viewBox="0 0 200 140">
         {svcs.slice(0, NODES.length).map((s, i) => <line key={"l" + i} className={weak(s.ms) ? "flow weak" : "flow"} x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={col(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
         {svcs.slice(0, NODES.length).map((s, i) => weak(s.ms) ? sparks(NODES[i][0], NODES[i][1], col(s.ms), i) : null)}
-        <g className={"hub" + (alert ? " alert" : "")}>
+        <g className={"hub" + (alert ? " alert" : ok ? " ok" : "")}>
           <circle className="wave" cx="100" cy="70" r="16" fill="none" stroke={hub} strokeWidth="1" />
           <circle className="wave b" cx="100" cy="70" r="16" fill="none" stroke={hub} strokeWidth="1" />
           <circle className="ring" cx="100" cy="70" r="16" fill="rgba(36,27,22,1)" stroke={hub} strokeWidth="1.3" />
