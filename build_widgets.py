@@ -92,7 +92,7 @@ const niceTicks = (lo, hi, n = 3) => {
 const tickFmt = v => v >= 1000 ? Math.round(v).toLocaleString("en-US") : v.toFixed(v >= 100 ? 0 : 2);
 const etDay = t => new Date(t * 1000).toLocaleDateString("en-US", { timeZone: "America/New_York", weekday: "short" });
 const etTime = t => new Date(t * 1000).toLocaleString("en-US", { timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit" });
-const Spark = ({ d, w, h, up, base, ts, axis = false, fill = true, sw = 1.6 }) => {
+const Spark = ({ d, w, h, up, base, ts, axis = false, fill = true, sw = 1.6, fillOp = .26, draw = false }) => {
   if (!d || d.length < 2) return <svg width={w} height={h} />;
   const id = _pfx + (++_sid), padR = axis ? 46 : 5, padB = axis ? 18 : 0, cw = w - padR, ch = h - padB;
   const ref = base != null ? base : d[0];
@@ -100,6 +100,9 @@ const Spark = ({ d, w, h, up, base, ts, axis = false, fill = true, sw = 1.6 }) =
   const X = i => 2 + (i / (d.length - 1)) * (cw - 4), Y = v => 3 + (1 - (v - mn) / (mx - mn)) * (ch - 6);
   const P = d.map((v, i) => [X(i), Y(v)]), line = smooth(P), by = Y(ref), last = P[P.length - 1];
   const endCol = d[d.length - 1] >= ref ? UP : DN;
+  // live price tag on the right axis; tick labels it would cover are dropped
+  const tagY = Math.max(9, Math.min(ch - 9, last[1])), near = y => axis && Math.abs(y - tagY) < 13;
+  const tagTxt = d[d.length - 1] >= 1000 ? tickFmt(d[d.length - 1]) : d[d.length - 1].toFixed(2);
   const area = `${line}L${last[0].toFixed(1)} ${by.toFixed(1)}L${P[0][0].toFixed(1)} ${by.toFixed(1)}Z`;
   // day dividers (hourly data spans several sessions)
   const days = [];
@@ -124,23 +127,26 @@ const Spark = ({ d, w, h, up, base, ts, axis = false, fill = true, sw = 1.6 }) =
         <clipPath id={id + "a"}><rect x="-10" y="-10" width={w + 20} height={by + 10} /></clipPath>
         <clipPath id={id + "b"}><rect x="-10" y={by} width={w + 20} height={h + 10} /></clipPath>
         <linearGradient id={id + "u"} gradientUnits="userSpaceOnUse" x1="0" y1={Y(mx)} x2="0" y2={by}>
-          <stop offset="0" stopColor={UP} stopOpacity=".26" /><stop offset="1" stopColor={UP} stopOpacity=".02" /></linearGradient>
+          <stop offset="0" stopColor={UP} stopOpacity={fillOp} /><stop offset="1" stopColor={UP} stopOpacity=".02" /></linearGradient>
         <linearGradient id={id + "d"} gradientUnits="userSpaceOnUse" x1="0" y1={by} x2="0" y2={Y(mn)}>
-          <stop offset="0" stopColor={DN} stopOpacity=".02" /><stop offset="1" stopColor={DN} stopOpacity=".26" /></linearGradient>
+          <stop offset="0" stopColor={DN} stopOpacity=".02" /><stop offset="1" stopColor={DN} stopOpacity={fillOp} /></linearGradient>
       </defs>
       {axis && niceTicks(mn, mx).map(v => <g key={v}>
         <line x1="0" x2={cw} y1={Y(v)} y2={Y(v)} stroke="rgba(255,255,255,.05)" />
-        <text x={w} y={Y(v) + 3.5} textAnchor="end" fill="#6f665f" fontSize="10" className="num">{tickFmt(v)}</text></g>)}
+        {!near(Y(v)) && <text x={w} y={Y(v) + 3.5} textAnchor="end" fill="#6f665f" fontSize="10" className="num">{tickFmt(v)}</text>}</g>)}
       {days.map((i, k) => <g key={i}>
         {k > 0 && <line x1={X(i) - 2} x2={X(i) - 2} y1="0" y2={ch} stroke="rgba(255,255,255,.06)" />}
         <text x={(X(i) + (k + 1 < days.length ? X(days[k + 1]) : cw)) / 2} y={h - 3} textAnchor="middle" fill="#6f665f" fontSize="9.5" letterSpacing=".12em">{etDay(ts[i]).toUpperCase()}</text></g>)}
       {fill && <path d={area} fill={`url(#${id}u)`} clipPath={`url(#${id}a)`} />}
       {fill && <path d={area} fill={`url(#${id}d)`} clipPath={`url(#${id}b)`} />}
       <line x1="0" x2={cw} y1={by} y2={by} stroke="rgba(255,255,255,.2)" strokeWidth="1" />
-      {axis && <text x={w} y={by + 3.5} textAnchor="end" fill="#a39a92" fontSize="10" fontWeight="600" className="num">{tickFmt(ref)}</text>}
-      <path d={line} fill="none" stroke={UP} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" clipPath={`url(#${id}a)`} />
-      <path d={line} fill="none" stroke={DN} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" clipPath={`url(#${id}b)`} />
-      {axis && <circle cx={last[0]} cy={last[1]} r="9" fill={endCol} opacity=".18" className="pulse" />}
+      {axis && !near(by) && <text x={w} y={by + 3.5} textAnchor="end" fill="#a39a92" fontSize="10" fontWeight="600" className="num">{tickFmt(ref)}</text>}
+      <path d={line} fill="none" stroke={UP} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" clipPath={`url(#${id}a)`} pathLength={draw ? 1 : undefined} className={draw ? "draw" : undefined} />
+      <path d={line} fill="none" stroke={DN} strokeWidth={sw} strokeLinejoin="round" strokeLinecap="round" clipPath={`url(#${id}b)`} pathLength={draw ? 1 : undefined} className={draw ? "draw" : undefined} />
+      {axis && <circle cx={last[0]} cy={last[1]} r="9" fill={endCol} opacity=".35" className="pulse" />}
+      {axis && <line x1={last[0]} x2={cw + 3} y1={last[1]} y2={tagY} stroke={endCol} strokeOpacity=".45" strokeDasharray="2 3" />}
+      {axis && <g><rect x={cw + 3} y={tagY - 8.5} width={padR - 3} height="17" rx="4.5" fill={endCol} />
+        <text x={w - 4} y={tagY + 3.5} textAnchor="end" fill={SURF} fontSize="10" fontWeight="700" className="num">{tagTxt}</text></g>}
       {axis ? <circle cx={last[0]} cy={last[1]} r="4" fill={endCol} stroke={SURF} strokeOpacity=".6" strokeWidth="2" />
         : <circle cx={last[0]} cy={last[1]} r="2.4" fill={endCol} style={{ filter: `drop-shadow(0 0 3px ${endCol})` }} />}
       {axis && <g className="xh" style={{ opacity: 0, pointerEvents: "none", transition: "opacity .15s" }}>
@@ -681,31 +687,49 @@ export const command = "%%PY%% ~/.stark/market.py json quotes";
 export const refreshFrequency = 5 * 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
+  /* the centrepiece: lighter glass, deeper shadow, full amber edge — the side panels sit back */
+  background:
+    radial-gradient(320px circle at var(--mx, -999px) var(--my, -999px), rgba(255,236,210,.09), transparent 70%),
+    linear-gradient(180deg, rgba(255,255,255,.085), rgba(255,255,255,.015) 42%),
+    rgba(30,25,21,.80);
+  border-color: rgba(245,177,76,.17);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 0 0 1px rgba(0,0,0,.35), 0 34px 90px rgba(0,0,0,.7);
+  &:hover { border-color: rgba(245,177,76,.28) }
+  &::before { left:0; right:0; height:1.5px; background: linear-gradient(90deg, transparent, rgba(245,177,76,.95) 25%, rgba(245,177,76,.95) 75%, transparent) }
+  h1 { color: rgba(242,237,230,.86) }
   .pill { margin-left:10px; font-size:10px; letter-spacing:.1em; padding:3px 9px; border-radius:20px; font-weight:600 }
-  .hero { padding:14px 18px 0; cursor:pointer }
+  .stage { display:grid }
+  .hero { grid-area: 1 / 1; padding:14px 18px 0; cursor:pointer; opacity:0; visibility:hidden; transition: opacity .25s, visibility .25s }
+  .hero.on { opacity:1; visibility:visible }
   .hrow { display:flex; align-items:flex-end; gap:12px }
   .hname { font-size:10px; letter-spacing:.2em; color:#8c8178; font-weight:600 }
-  .hp { font: 200 44px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.02em; line-height:1.05; color:#ffffff }
-  .hc { font-size:15px; font-weight:500; padding-bottom:5px }
+  .hname b { color:#f5b14c; font-weight:700 }
+  .hp { font: 400 46px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.025em; line-height:1.05; color:#ffffff }
+  .hc { font-size:14px; font-weight:700; padding:4px 11px; border-radius:20px; margin-bottom:8px }
+  .hc.up { background:rgba(74,222,128,.15); box-shadow: inset 0 0 0 1px rgba(74,222,128,.25) }
+  .hc.dn { background:rgba(248,113,113,.15); box-shadow: inset 0 0 0 1px rgba(248,113,113,.25) }
   .range { margin-left:auto; text-align:right; font-size:10.5px; color:#a39a92; line-height:1.6; padding-bottom:4px }
   .range b { color:#e6dcd2; font-weight:500 }
-  .chart { margin-top:8px }
-  .pulse { transform-box: fill-box; transform-origin: center; animation: pulse 2.4s ease-out infinite }
-  @keyframes pulse { 0% { transform: scale(.5); opacity:.45 } 100% { transform: scale(1.6); opacity:0 } }
-  .idx { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:14px 16px 0 }
-  .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:12px 16px 0 }
-  .tile { background:rgba(255,214,170,.035); border:1px solid rgba(255,214,170,.05); border-radius:14px; padding:10px 12px; cursor:pointer; transition: all .25s; position:relative }
-  .tile:hover { background:rgba(255,255,255,.07); border-color: rgba(255,255,255,.14) }
-  .tile .top { display:flex; justify-content:space-between; align-items:baseline }
+  .chart { margin-top:6px }
+  .pulse { transform-box: fill-box; transform-origin: center; animation: pulse 2.6s ease-out infinite }
+  @keyframes pulse { 0% { transform: scale(.5); opacity:.6 } 100% { transform: scale(2.1); opacity:0 } }
+  .draw { stroke-dasharray:1; stroke-dashoffset:1; animation: draw 1.4s cubic-bezier(.3,.7,.3,1) forwards }
+  @keyframes draw { to { stroke-dashoffset:0 } }
+  .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:10px 16px 0 }
+  .tile { background:rgba(255,214,170,.04); border:1px solid rgba(255,214,170,.06); border-radius:14px; padding:9px 12px 9px 14px; cursor:pointer; transition: all .25s; position:relative; overflow:hidden }
+  .tile::before { content:""; position:absolute; left:0; top:10px; bottom:10px; width:2.5px; border-radius:0 3px 3px 0 }
+  .tile.tu::before { background:#4ade80 } .tile.td::before { background:#f87171 }
+  .tile:hover, .tile.sel { background:rgba(255,255,255,.075); border-color: rgba(245,177,76,.35) }
+  .tile .top { display:flex; justify-content:space-between; align-items:center }
   .tile .s { font-size:11px; font-weight:700; letter-spacing:.06em; color:#e6dcd2 }
-  .tile .c { font-size:10.5px; font-weight:600 }
-  .tile .p { font-size:16px; font-weight:400; margin:2px 0 5px }
+  .tile .c { font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:10px }
+  .tile .c.up { background:rgba(74,222,128,.14) } .tile .c.dn { background:rgba(248,113,113,.14) }
+  .tile .p { font-size:19px; font-weight:500; margin:1px 0 3px; color:#ffffff; border-radius:5px }
+  .tile .p.flu { animation: flu 1.6s ease-out } .tile .p.fld { animation: fld 1.6s ease-out }
+  @keyframes flu { 0%, 25% { color:#4ade80; background:rgba(74,222,128,.22) } 100% { background:rgba(74,222,128,0) } }
+  @keyframes fld { 0%, 25% { color:#f87171; background:rgba(248,113,113,.22) } 100% { background:rgba(248,113,113,0) } }
   .rk { font-style:normal; color:#ffb35c; font-size:9.5px; font-weight:700; margin-right:5px }
-  .cap { margin-left:6px; font-size:9.5px; font-weight:600; color:#8c8178; letter-spacing:.02em }
-  .tcap { float:right; font-size:9.5px; color:#8c8178; font-weight:500; margin-top:5px }
-  .idx .tile { display:flex; align-items:center; gap:8px; padding:8px 11px; min-width:0 }
-  .idx .tile > div { min-width:0 }
-  .idx .tile .p { margin:1px 0 0; font-size:14px }
+  .tcap { float:right; font-size:9px; color:#6f665f; font-weight:500; margin-top:8px }
 `;
 %%FMT%%
 %%SPARK%%
@@ -717,35 +741,51 @@ const nyOpen = () => {
 };
 const cap = c => !c ? "" : c >= 1e12 ? `$${(c / 1e12).toFixed(2)}T` : `$${Math.round(c / 1e9)}B`;
 const yahoo = s => run(`open "https://finance.yahoo.com/quote/${encodeURIComponent(s)}"`);
+// Hover a tile to put its 5-day chart on the big stage; leaving the panel brings NASDAQ back.
+const pick = (root, sym) => {
+  if (!root) return;
+  root.querySelectorAll(".hero").forEach(h => h.classList.toggle("on", h.dataset.sym === sym));
+  root.querySelectorAll(".tile").forEach(t => t.classList.toggle("sel", t.dataset.sym === sym));
+};
+const HeroView = ({ x, label, on }) => (
+  <div className={"hero" + (on ? " on" : "")} data-sym={x.sym} onClick={() => yahoo(x.sym)}>
+    <div className="hname">{label}</div>
+    <div className="hrow">
+      <div className="hp num">{x.p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+      <div className={"hc num " + (x.c >= 0 ? "up" : "dn")}>{pct(x.c)}</div>
+      <div className="range num">Day high <b>{fmt(x.hi)}</b><br />Day low <b>{fmt(x.lo)}</b></div>
+    </div>
+    <div className="chart"><Spark d={x.spark} ts={x.ts} base={x.prev} w={650} h={200} sw={2.2} fillOp={.45} axis /></div>
+  </div>);
 export const render = ({ output }) => {
   let q = []; try { q = JSON.parse(output); } catch (e) {}
   const by = Object.fromEntries(q.map(x => [x.sym, x])), hero = by["^IXIC"], open = nyOpen();
-  // rank by market cap: top 3 featured, next 8 in the grid
+  // rank by market cap: the 6 biggest get tiles
   const ranked = q.filter(x => x.sym !== "^IXIC").sort((a, b) => (b.cap || 0) - (a.cap || 0));
   const top = ranked.slice(0, 6);
+  // flash a price (and redraw its sparkline) when it moved since the last refresh
+  const was = window.__mkPrev || {}; if (q.length) window.__mkPrev = Object.fromEntries(q.map(x => [x.sym, x.p]));
+  const moved = x => was[x.sym] == null || was[x.sym] === x.p ? "" : x.p > was[x.sym] ? "flu" : "fld";
   return (
     <div>
       <header><span style={{ color: "#4ade80" }}>↗</span><h1>TECH MARKETS</h1>
         <span className="sub">RANKED BY MARKET CAP</span>
         <span className="pill" style={{ color: open ? "#4ade80" : "#ffb35c", background: open ? "rgba(74,222,128,.1)" : "rgba(255,179,92,.1)" }}>
           ● NYSE {open ? "OPEN" : "CLOSED"}</span></header>
-      {!hero ? <div className="hero muted">Connecting to markets…</div> : <div>
-        <div className="hero" onClick={() => yahoo("^IXIC")}>
-          <div className="hname">NASDAQ COMPOSITE · 5 DAYS</div>
-          <div className="hrow">
-            <div className="hp num">{hero.p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-            <div className={"hc num " + (hero.c >= 0 ? "up" : "dn")}>{pct(hero.c)}</div>
-            <div className="range num">Day high <b>{fmt(hero.hi)}</b><br />Day low <b>{fmt(hero.lo)}</b></div>
-          </div>
-          <div className="chart"><Spark d={hero.spark} ts={hero.ts} base={hero.prev} w={650} h={206} sw={2} axis /></div>
+      {!hero ? <div className="hero on muted">Connecting to markets…</div> : <div onMouseLeave={e => pick(e.currentTarget, "^IXIC")}>
+        <div className="stage">
+          <HeroView x={hero} label="NASDAQ COMPOSITE · 5 DAYS" on />
+          {top.map((x, i) => <HeroView key={x.sym} x={x}
+            label={<span><b>#{i + 1} {x.sym}</b>{x.name !== x.sym ? " · " + x.name : ""} · 5 DAYS · {cap(x.cap)}</span>} />)}
         </div>
         <div className="grid">
           {top.map((x, i) => (
-            <div className="tile" key={x.sym} onClick={() => yahoo(x.sym)}>
+            <div className={"tile " + (x.c >= 0 ? "tu" : "td")} key={x.sym} data-sym={x.sym} onClick={() => yahoo(x.sym)}
+              onMouseEnter={e => pick(e.currentTarget.closest(".grid").parentElement, x.sym)}>
               <div className="top"><span className="s"><em className="rk">#{i + 1}</em>{x.sym}</span>
                 <span className={"c num " + (x.c >= 0 ? "up" : "dn")}>{pct(x.c)}</span></div>
-              <div className="p num">{fmt(x.p)}<span className="tcap">{cap(x.cap)}</span></div>
-              <Spark d={x.spark} base={x.prev} w={186} h={34} />
+              <div className={"p num " + moved(x)}>{fmt(x.p)}<span className="tcap">{cap(x.cap)}</span></div>
+              <Spark d={x.spark} base={x.prev} w={186} h={34} fillOp={.34} draw={!!moved(x)} />
             </div>))}
         </div>
       </div>}
