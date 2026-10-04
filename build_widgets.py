@@ -18,45 +18,30 @@ POS = {
 }
 
 SHARED = """
-  font: 600 13px Rajdhani, "SF Pro Text", -apple-system, sans-serif; color: #dff6ff;
+  font: 500 12.5px -apple-system, "SF Pro Text", sans-serif; color: #f2ede6; -webkit-font-smoothing: antialiased;
   -webkit-user-select: none; user-select: none; cursor: default; box-sizing: border-box;
   background:
-    radial-gradient(240px circle at var(--mx, -999px) var(--my, -999px), rgba(190,250,255,.16), transparent 65%),
-    linear-gradient(180deg, transparent 0%, rgba(62,232,255,.08) 50%, transparent 100%) 0 -120% / 100% 40% no-repeat,
-    linear-gradient(180deg, rgba(255,255,255,.10), rgba(255,255,255,0) 28%),
-    repeating-linear-gradient(0deg, rgba(62,232,255,.03) 0 1px, transparent 1px 3px),
-    linear-gradient(rgba(62,232,255,.03) 1px, transparent 1px) 0 0 / 24px 24px,
-    linear-gradient(90deg, rgba(62,232,255,.03) 1px, transparent 1px) 0 0 / 24px 24px,
-    linear-gradient(160deg, rgba(6,24,36,.55), rgba(2,8,14,.70));
-  animation: scan 7s linear infinite;
-  backdrop-filter: blur(30px) saturate(170%) brightness(.38); -webkit-backdrop-filter: blur(30px) saturate(170%) brightness(.38);
-  border: 1px solid rgba(190,245,255,.22); border-radius: 14px;
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,.28), inset 0 -1px 0 rgba(0,0,0,.45),
-    inset 1px 0 0 rgba(255,255,255,.07), inset -1px 0 0 rgba(255,255,255,.04),
-    inset 0 0 36px rgba(62,232,255,.06),
-    0 0 26px rgba(62,232,255,.14), 0 14px 40px rgba(0,0,0,.35);
-  overflow: hidden; transition: box-shadow .25s, transform .25s;
-  &:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.34), inset 0 -1px 0 rgba(0,0,0,.45), inset 0 0 36px rgba(62,232,255,.08),
-            0 0 34px rgba(62,232,255,.26), 0 18px 48px rgba(0,0,0,.4) }
-  &.dragging { transform: scale(1.015); transition: box-shadow .25s; box-shadow: 0 0 0 1px rgba(62,232,255,.6), 0 0 44px rgba(62,232,255,.4), 0 26px 60px rgba(0,0,0,.5) }
+    radial-gradient(280px circle at var(--mx, -999px) var(--my, -999px), rgba(255,236,210,.075), transparent 70%),
+    linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,0) 38%),
+    rgba(17,14,12,.72);
+  backdrop-filter: blur(40px) saturate(150%) brightness(.7); -webkit-backdrop-filter: blur(40px) saturate(150%) brightness(.7);
+  border: 1px solid rgba(255,255,255,.075); border-radius: 22px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 24px 60px rgba(0,0,0,.45);
+  overflow: hidden; transition: border-color .3s, box-shadow .3s, transform .3s;
+  &:hover { border-color: rgba(255,255,255,.13) }
+  &.dragging { transform: scale(1.012); box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 34px 80px rgba(0,0,0,.6) }
   &.dragging header { cursor: grabbing }
-  @keyframes scan { to { background-position: 0 0, 0 260%, 0 0, 0 0, 0 0, 0 0, 0 0 } }
-  &::before, &::after { content:""; position:absolute; width:18px; height:18px; pointer-events:none; z-index:2 }
-  &::before { top:6px; left:6px; border-top:2px solid #3ee8ff; border-left:2px solid #3ee8ff; filter: drop-shadow(0 0 4px #3ee8ff) }
-  &::after { bottom:6px; right:6px; border-bottom:2px solid #ff4b3a; border-right:2px solid #ff4b3a; filter: drop-shadow(0 0 5px #ff4b3a) }
+  &::before { content:""; position:absolute; top:0; left:28px; right:28px; height:1px; pointer-events:none;
+              background: linear-gradient(90deg, transparent, rgba(245,177,76,.6), transparent) }
   * { box-sizing: border-box }
-  header { position:relative; display:flex; align-items:center; gap:9px; height:42px; padding:0 16px; cursor: grab;
-           background: linear-gradient(90deg, rgba(62,232,255,.10), transparent 70%) }
-  header::after { content:""; position:absolute; left:0; right:0; bottom:0; height:1px; background: linear-gradient(90deg, #3ee8ff, rgba(62,232,255,.25) 40%, transparent) }
-  h1 { margin:0; white-space:nowrap; font: 700 10.5px Orbitron, "SF Pro Display", sans-serif; letter-spacing:.28em; color:#bff6ff; text-shadow: 0 0 8px rgba(62,232,255,.7) }
-  h1::before { content:"◢ "; color:#ffc94a; text-shadow: 0 0 6px #ffc94a }
-  .sub { margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis; font: 600 10px Rajdhani, sans-serif; letter-spacing:.16em; color:#5f8a99; white-space:nowrap }
-  .sub b { color:#ffc94a; font-weight:700; text-shadow: 0 0 6px rgba(255,201,74,.6) }
-  .up { color:#39ff9f; text-shadow: 0 0 6px rgba(57,255,159,.45) } .dn { color:#ff3b4e; text-shadow: 0 0 6px rgba(255,59,78,.45) }
-  .muted { color:#7fa9b8 } .dim { color:#46707f }
-  .num { font-family: "Share Tech Mono", "SF Mono", Menlo, monospace; font-weight:400; letter-spacing:.02em }
-  .lbl { font: 700 9.5px Orbitron, sans-serif; letter-spacing:.2em; color:#5f8a99 }
+  header { display:flex; align-items:center; gap:9px; height:46px; padding:0 20px; cursor: grab }
+  h1 { margin:0; white-space:nowrap; font: 600 9.5px Orbitron, -apple-system, sans-serif; letter-spacing:.32em; color: rgba(242,237,230,.66) }
+  .sub { margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+         font: 500 10.5px -apple-system, sans-serif; letter-spacing:.04em; color: rgba(242,237,230,.38) }
+  .sub b { color:#f5b14c; font-weight:600 }
+  .up { color:#4fd18b } .dn { color:#ff6b6b } .muted { color:#9b938a } .dim { color:#6b645d }
+  .num { font-variant-numeric: tabular-nums; letter-spacing:-.01em }
+  .lbl { font: 600 8.5px Orbitron, -apple-system, sans-serif; letter-spacing:.24em; color:#857d75 }
 """
 
 AGO = """const ago = d => {
@@ -117,13 +102,12 @@ const session = (ex, now) => {
 
 # ── Sci-fi HUD palette: holographic cyan, Stark gold, neon green/red ──
 THEME = [
-    ("rgba(255,179,92,", "rgba(62,232,255,"), ("rgba(255,214,170,", "rgba(62,232,255,"),
-    ("rgba(74,222,128,", "rgba(57,255,159,"), ("rgba(248,113,113,", "rgba(255,59,78,"),
-    ("rgba(36,27,22,1)", "rgba(4,16,24,1)"),
-    ("#ffb35c", "#3ee8ff"), ("#4ade80", "#39ff9f"), ("#f87171", "#ff3b4e"), ("#7fdcff", "#6fe8ff"),
-    ("#fff7ee", "#e8fbff"), ("#f3ece6", "#dff6ff"), ("#e6dcd2", "#cfeffa"), ("#d9cfc6", "#b8dce8"),
-    ("#a39a92", "#7fa9b8"), ("#8c8178", "#5f8a99"), ("#6f665f", "#46707f"), ("#4a403a", "#1e3b47"),
-    ("#d9b48a", "#ffc94a"), ("#a78bfa", "#b388ff"), ("#c4a1ff", "#b388ff"),
+    ("rgba(255,179,92,", "rgba(245,177,76,"), ("rgba(255,214,170,", "rgba(255,255,255,"),
+    ("rgba(74,222,128,", "rgba(79,209,139,"), ("rgba(248,113,113,", "rgba(255,107,107,"), ("rgba(36,27,22,1)", "rgba(24,20,18,1)"),
+    ("#ffb35c", "#f5b14c"), ("#4ade80", "#4fd18b"), ("#f87171", "#ff6b6b"), ("#7fdcff", "#7cc8ff"),
+    ("#fff7ee", "#ffffff"), ("#f3ece6", "#f2ede6"), ("#e6dcd2", "#ebe5dd"), ("#d9cfc6", "#d9d2c8"),
+    ("#a39a92", "#9b938a"), ("#8c8178", "#857d75"), ("#6f665f", "#6b645d"), ("#4a403a", "#3e3934"),
+    ("#d9b48a", "#e9c48e"), ("#a78bfa", "#b39cff"), ("#c4a1ff", "#b39cff"),
 ]
 
 HUD = """// Drag a panel by its header to move it (remembered); double-click the header to reset. Cursor light for the glass.
@@ -154,12 +138,13 @@ const hud = name => el => {
 
 # ── Stark armour HUD: amber holograms on smoked-bronze glass (blends with a warm wallpaper) ──
 WARM = [
-    ("rgba(190,250,255,", "rgba(255,226,180,"), ("rgba(190,245,255,", "rgba(255,220,170,"),
-    ("rgba(6,24,36,.55)", "rgba(34,15,6,.50)"), ("rgba(2,8,14,.70)", "rgba(12,5,2,.68)"), ("rgba(4,16,24,1)", "rgba(30,14,6,1)"),
-    ("rgba(62,232,255,", "rgba(255,170,64,"), ("#3ee8ff", "#ffb03f"),
-    ("rgba(255,201,74,", "rgba(255,214,128,"), ("#ffc94a", "#ffd680"),
-    ("#bff6ff", "#ffe0ad"), ("#dff6ff", "#fff1dc"), ("#e8fbff", "#fff6e8"), ("#cfeffa", "#f6e2c6"), ("#b8dce8", "#e6c9a4"),
-    ("#7fa9b8", "#c39d74"), ("#5f8a99", "#a4805a"), ("#46707f", "#7a5c40"), ("#1e3b47", "#4a3220"),
+    ("rgba(62,232,255,", "rgba(245,177,76,"), ("#3ee8ff", "#f5b14c"), ("rgba(255,201,74,", "rgba(245,177,76,"), ("#ffc94a", "#f5b14c"),
+    ("rgba(57,255,159,", "rgba(79,209,139,"), ("#39ff9f", "#4fd18b"), ("rgba(255,59,78,", "rgba(255,107,107,"), ("#ff3b4e", "#ff6b6b"),
+    ("rgba(255,75,58,", "rgba(255,214,150,"), ("#ff4b3a", "#ffd696"),
+    ("rgba(190,250,255,", "rgba(255,255,255,"), ("rgba(190,245,255,", "rgba(255,255,255,"),
+    ("#e8fbff", "#ffffff"), ("#bff6ff", "#f2ede6"), ("#dff6ff", "#f2ede6"), ("#cfeffa", "#ebe5dd"), ("#b8dce8", "#d9d2c8"),
+    ("#7fa9b8", "#9b938a"), ("#5f8a99", "#857d75"), ("#46707f", "#6b645d"), ("#1e3b47", "#3e3934"),
+    ("#6fe8ff", "#7cc8ff"), ("#b388ff", "#b39cff"),
 ]
 
 # ── HUD cursors (SVG crosshairs) ──
@@ -171,8 +156,8 @@ def _cursor(color, size=28):
            f'<path d="M{c} 1v6M{c} {size-7}v6M1 {c}h6M{size-7} {c}h6"/></g>'
            f'<circle cx="{c}" cy="{c}" r="1.6" fill="{color}"/></svg>')
     return f'url("data:image/svg+xml,{urllib.parse.quote(svg)}") {c} {c}'
-CURSOR = _cursor("#ffb03f") + ", crosshair"
-CURSOR_HOT = _cursor("#ff4b3a") + ", pointer"
+CURSOR = _cursor("#f5b14c") + ", crosshair"
+CURSOR_HOT = _cursor("#ffd696") + ", pointer"
 
 def widget(name, body):
     x, y, w, h = POS.get(name, (0, 0, 0, 0)); y += DY
@@ -184,6 +169,7 @@ def widget(name, body):
         body = body.replace(old, new)
     for old, new in WARM:
         body = body.replace(old, new)
+    body = re.sub(r";?\s*text-shadow:[^;}]*", "", body)
     body = body.replace("cursor: default;", f"cursor: {CURSOR};").replace("cursor:pointer", f"cursor:{CURSOR_HOT}")
     if name != "aa-links":
         body = re.sub(r"(return \(\s*<div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', body)
@@ -199,14 +185,14 @@ export const command = "date +%s";
 export const refreshFrequency = 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  padding: 18px 20px; cursor: grab;
+  padding: 18px 18px 16px 20px; cursor: grab;
   .time { display:flex; align-items:baseline; gap:8px }
-  .time b { font: 600 54px Orbitron, sans-serif; letter-spacing:.02em; line-height:1; color:#e8fbff; text-shadow: 0 0 18px rgba(62,232,255,.65) }
-  .time span { font: 500 18px Orbitron, sans-serif; color:#ffc94a; text-shadow: 0 0 8px rgba(255,201,74,.7) }
-  .date { margin-top:10px; font: 600 15px Rajdhani, sans-serif; letter-spacing:.12em; text-transform:uppercase; color:#cfeffa }
+  .time b { font: 200 60px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.03em; line-height:1; color:#ffffff }
+  .time span { font: 300 20px -apple-system, sans-serif; color:#f5b14c }
+  .date { margin-top:8px; font: 500 14px -apple-system, sans-serif; color:#ebe5dd }
   .greet { margin-top:1px; font-size:12px; letter-spacing:.06em; color:#5f8a99 }
-  .ex { display:grid; grid-template-columns: repeat(3, 1fr); gap:8px; margin-top:14px }
-  .cell { background:rgba(255,214,170,.05); border:1px solid rgba(255,214,170,.14); border-left:2px solid #ffc94a; border-radius:2px; padding:7px 9px }
+  .ex { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:7px; margin-top:12px }
+  .cell { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:6px 10px }
   .cell .c { font: 700 8.5px Orbitron, sans-serif; letter-spacing:.16em; color:#8c8178 }
   .cell .t { font-size:15px; font-weight:500; margin:2px 0 }
   .cell .s { font-size:9.5px; white-space:nowrap }
@@ -221,7 +207,7 @@ export const render = () => {
       <div className="time num"><b>{now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</b>
         <span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
       <div className="date">{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
-      <div className="greet">Good {part}, Anthony · <span style={{ color: "#39ff9f" }}>● J.A.R.V.I.S. ONLINE</span></div>
+      <div className="greet">Good {part}, Anthony</div>
       <div className="ex">
         {EXCHANGES.map(ex => { const s = session(ex, now); return (
           <div className="cell" key={ex.city}>
@@ -244,13 +230,13 @@ export const className = `
   %%POS%%%%SHARED%%
   .main { display:flex; align-items:center; gap:14px; padding:10px 18px 4px }
   .ico { font-size:44px; line-height:1; filter: drop-shadow(0 4px 12px rgba(255,179,92,.35)) }
-  .temp { font: 500 42px Orbitron, sans-serif; line-height:1; color:#e8fbff; text-shadow: 0 0 14px rgba(62,232,255,.6) }
+  .temp { font: 200 50px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.02em; line-height:1; color:#ffffff }
   .temp sup { font-size:18px; color:#ffb35c; vertical-align: 20px; margin-left:2px }
   .cond { margin-left:auto; text-align:right }
   .cond b { display:block; font-size:15px; font-weight:600 }
   .cond span { display:block; font-size:11px; color:#a39a92; line-height:1.5 }
   .chips { display:flex; gap:6px; padding:4px 16px 10px }
-  .chip { flex:1; text-align:center; font-size:10.5px; padding:5px 0; border-radius:2px; background:rgba(255,214,170,.05); border:1px solid rgba(255,214,170,.12); color:#d9cfc6; white-space:nowrap }
+  .chip { flex:1; text-align:center; font-size:10.5px; padding:5px 0; border-radius:10px; background:rgba(255,214,170,.04); border:1px solid rgba(255,214,170,.06); color:#d9cfc6; white-space:nowrap }
   .days { display:grid; grid-template-columns: repeat(5, 1fr); margin:0 12px; padding-top:8px; border-top:1px solid rgba(255,214,170,.08); text-align:center }
   .d .n { font-size:9.5px; letter-spacing:.14em; color:#8c8178; font-weight:600 }
   .d .i { font-size:17px; margin:3px 0 1px }
@@ -356,7 +342,7 @@ export const className = `
   .flow { stroke-dasharray: 3 5; animation: f 1.2s linear infinite } @keyframes f { to { stroke-dashoffset: -16 } }
   .pulse { animation: p 2.4s ease-in-out infinite } @keyframes p { 50% { opacity:.45 } }
   .rates { margin-left:auto; text-align:right; padding-right:8px }
-  .rate { font-family:"Share Tech Mono", monospace; font-size:22px; line-height:1.15 } .rate small { font-size:10px; color:#8c8178; margin-left:3px }
+  .rate { font: 200 25px -apple-system, sans-serif; line-height:1.15 } .rate small { font-size:10px; color:#8c8178; margin-left:3px }
   .rl { font-size:9.5px; letter-spacing:.16em; color:#8c8178; font-weight:600; margin-top:8px }
 `;
 const NODES = [[36, 28], [164, 28], [36, 112], [164, 112]];
@@ -373,7 +359,7 @@ export const render = ({ output }) => {
         <svg width="200" height="140" viewBox="0 0 200 140">
           {svcs.map((s, i) => <line key={"l" + i} className="flow" x1="100" y1="70" x2={NODES[i][0]} y2={NODES[i][1]} stroke={col(s.ms)} strokeWidth="1.3" strokeOpacity=".8" />)}
           <circle cx="100" cy="70" r="16" fill="rgba(36,27,22,1)" stroke="#ffb35c" strokeWidth="1.3" />
-          <text x="100" y="73.5" textAnchor="middle" fontSize="9" fontWeight="700" fill="#ffb35c" letterSpacing="1" fontFamily="Orbitron">CORE</text>
+          <text x="100" y="73.5" textAnchor="middle" fontSize="7" fontWeight="700" fill="#ffb35c" letterSpacing=".5" fontFamily="Orbitron">CORE</text>
           {svcs.map((s, i) => { const [x, y] = NODES[i], below = y > 70; return (
             <g key={s.name}>
               <circle className="pulse" cx={x} cy={y} r="4.5" fill={col(s.ms)} style={{ filter: `drop-shadow(0 0 4px ${col(s.ms)})` }} />
@@ -400,16 +386,15 @@ export const className = `
   .hero { padding:14px 18px 0; cursor:pointer }
   .hrow { display:flex; align-items:flex-end; gap:12px }
   .hname { font-size:10px; letter-spacing:.2em; color:#8c8178; font-weight:600 }
-  .hp { font-size:40px; line-height:1.05; color:#e8fbff; text-shadow: 0 0 16px rgba(62,232,255,.55) }
+  .hp { font: 200 44px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.02em; line-height:1.05; color:#ffffff }
   .hc { font-size:15px; font-weight:500; padding-bottom:5px }
   .range { margin-left:auto; text-align:right; font-size:10.5px; color:#a39a92; line-height:1.6; padding-bottom:4px }
   .range b { color:#e6dcd2; font-weight:500 }
   .chart { margin-top:10px }
   .idx { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:14px 16px 0 }
   .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; padding:10px 16px 0 }
-  .tile { background:rgba(255,214,170,.045); border:1px solid rgba(255,214,170,.08); border-radius:3px; padding:9px 11px; cursor:pointer; transition: all .2s; position:relative }
-  .tile::before { content:""; position:absolute; top:0; left:0; width:8px; height:8px; border-top:1px solid #3ee8ff; border-left:1px solid #3ee8ff }
-  .tile:hover { background:rgba(255,179,92,.10); border-color: rgba(62,232,255,.5); box-shadow: 0 0 14px rgba(62,232,255,.25) }
+  .tile { background:rgba(255,214,170,.035); border:1px solid rgba(255,214,170,.05); border-radius:14px; padding:10px 12px; cursor:pointer; transition: all .25s; position:relative }
+  .tile:hover { background:rgba(255,255,255,.07); border-color: rgba(255,255,255,.14) }
   .tile .top { display:flex; justify-content:space-between; align-items:baseline }
   .tile .s { font-size:11px; font-weight:700; letter-spacing:.06em; color:#e6dcd2 }
   .tile .c { font-size:10.5px; font-weight:600 }
@@ -451,7 +436,7 @@ export const render = ({ output }) => {
             <div className={"hc num " + (hero.c >= 0 ? "up" : "dn")}>{pct(hero.c)}</div>
             <div className="range num">Day high <b>{fmt(hero.hi)}</b><br />Day low <b>{fmt(hero.lo)}</b></div>
           </div>
-          <div className="chart"><Spark d={hero.spark} w={650} h={160} up={hero.c >= 0} sw={2} /></div>
+          <div className="chart"><Spark d={hero.spark} w={650} h={136} up={hero.c >= 0} sw={2} /></div>
         </div>
         <div className="idx">
           {idx.map((x, i) => (
@@ -466,7 +451,7 @@ export const render = ({ output }) => {
             <div className="tile" key={x.sym} onClick={() => yahoo(x.sym)}>
               <div className="top"><span className="s"><em className="rk">#{i + 4}</em>{x.sym}</span><span className={"c num " + (x.c >= 0 ? "up" : "dn")}>{pct(x.c)}</span></div>
               <div className="p num">{fmt(x.p)}<span className="tcap">{cap(x.cap)}</span></div>
-              <Spark d={x.spark} w={134} h={30} up={x.c >= 0} />
+              <Spark d={x.spark} w={128} h={30} up={x.c >= 0} />
             </div>))}
         </div>
       </div>}
@@ -493,7 +478,7 @@ export const className = `
   .hm { display:grid; grid-template-rows: repeat(7, 13px); grid-auto-flow: column; grid-auto-columns: 13px; gap:3px; margin-top:8px }
   .hm i { border-radius:3px }
   .stats { flex:1; display:flex; flex-direction:column; justify-content:flex-end; gap:9px; padding-bottom:2px }
-  .st b { display:block; font-size:20px; color:#e8fbff; line-height:1.1 }
+  .st b { display:block; font: 200 22px -apple-system, sans-serif; color:#ffffff; line-height:1.1 }
   .st span { font-size:9.5px; letter-spacing:.14em; color:#8c8178; font-weight:600 }
 `;
 const half = [[0,-30],[18,-60],[22,-22],[60,-34],[140,-80],[250,-70],[330,-20],[300,-10],[270,15],[230,10],[200,40],[150,25],[110,55],[70,30],[30,40],[0,90]];
@@ -534,7 +519,7 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── AI & TECH WIRE ─────────────────────────
-widget("ai-wire", r'''// AI & tech headlines, AI stories first. Click to open.
+widget("ai-wire", r'''// AI & tech headlines, newest first (AI stories tagged). Click to open.
 import { run } from "uebersicht";
 export const command = "%%PY%% ~/.stark/market.py json tech";
 export const refreshFrequency = 15 * 60 * 1000;
@@ -551,6 +536,7 @@ export const className = `
 %%AGO%%
 export const render = ({ output }) => {
   let n = []; try { n = JSON.parse(output); } catch (e) {}
+  n.sort((a, b) => new Date(b.d) - new Date(a.d));  // latest first
   return (
     <div>
       <header><span style={{ color: "#7fdcff" }}>✦</span><h1>AI &amp; TECH WIRE</h1><span className="sub">CNBC TECH · YAHOO · J.A.R.V.I.S. <b style={{ color: "#7fdcff" }}>BRIEFING</b></span></header>
@@ -724,7 +710,7 @@ const FONTS = "@import url('https://fonts.googleapis.com/css2?family=Orbitron:wg
 export const render = () => { installCursor(); return (
   <svg width="100%" height="100%" viewBox="0 0 1470 923" preserveAspectRatio="none">
     <style>{FONTS}</style>
-    {!moved() && <g>
+    {false && <g>
     <g stroke="#ffb35c" strokeWidth="1.4" fill="#ffb35c" style={{ filter: "drop-shadow(0 0 4px rgba(255,179,92,.9))" }}>
       ''' + "\n      ".join(links) + '''
     </g></g>}

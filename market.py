@@ -74,7 +74,11 @@ def feed(feeds, n, ai_first=False):
         except Exception: pass
     if ai_first:
         for h in out: h["ai"] = bool(re.search(r"\b(" + "|".join(map(re.escape, AI_WORDS)) + r")\b", h["t"].lower()))
-        out.sort(key=lambda h: not h["ai"])
+    from email.utils import parsedate_to_datetime
+    def ts(h):
+        try: return parsedate_to_datetime(h["d"]).timestamp()
+        except Exception: return 0
+    out.sort(key=ts, reverse=True)  # newest first
     return out
 
 def market_caps(syms):
