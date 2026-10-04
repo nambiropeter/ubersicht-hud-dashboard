@@ -354,26 +354,26 @@ export const className = `
   .greet { margin-top:1px; font-size:12px; letter-spacing:.06em; color:#5f8a99 }
   .ex { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:7px; margin-top:12px }
   .cell { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:6px 8px; min-width:0 }
-  .cell .c { font: 700 8.5px Orbitron, sans-serif; letter-spacing:.16em; color:#8c8178 }
+  .cell .c { font: 700 8.5px Orbitron, sans-serif; letter-spacing:.1em; color:#8c8178; white-space:nowrap; overflow:hidden }
   .cell .t { font-size:15px; font-weight:500; margin:2px 0 }
   .cell .s { font-size:9.5px; white-space:nowrap }
   .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:5px; vertical-align:1px }
-  .here { position:absolute; right:18px; top:16px; text-align:center; cursor:default }
+  .here { position:absolute; text-align:center; cursor:default }
   .here .f { font-size:34px; line-height:1; display:inline-block; transform-origin: 8% 50%; filter: drop-shadow(0 3px 8px rgba(0,0,0,.45)) }
   .here:hover .f { animation: wave 1.1s ease-in-out infinite }
   @keyframes wave { 0%, 100% { transform: perspective(80px) rotateY(0) skewY(0) } 25% { transform: perspective(80px) rotateY(-18deg) skewY(-3deg) }
                     75% { transform: perspective(80px) rotateY(12deg) skewY(2deg) } }
   .here .n { font: 700 7.5px Orbitron, sans-serif; letter-spacing:.18em; color:#8c8178; margin-top:3px }
-  .cell { position:relative; perspective: 400px; padding:0; background:none; border:none }
-  .card { position:relative; transition: transform .55s cubic-bezier(.3,1.3,.5,1); transform-style: preserve-3d }
-  .cell:hover .card { transform: rotateY(180deg) }
-  .face { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:6px 8px;
-          backface-visibility:hidden; -webkit-backface-visibility:hidden }
-  .back { position:absolute; inset:0; transform: rotateY(180deg); display:flex; flex-direction:column; align-items:center; justify-content:center;
-          background:rgba(255,255,255,.075); border-color: rgba(245,177,76,.35); padding:4px 6px }
-  .back .f { font-size:24px; line-height:1 }
-  .back .x { font: 700 7.5px Orbitron, sans-serif; letter-spacing:.14em; color:#f5b14c; margin-top:3px; white-space:nowrap }
-  .back .o { font-size:9.5px; color:#a39a92; margin-top:1px; white-space:nowrap }
+  .cell { cursor:default; transition: background .25s, border-color .25s }
+  .cell:hover, .cell.sel { background:rgba(255,255,255,.075); border-color: rgba(245,177,76,.35) }
+  .stage { display:grid }
+  .view { grid-area: 1 / 1; position:relative; opacity:0; visibility:hidden; transition: opacity .25s, visibility .25s }
+  .view.on { opacity:1; visibility:visible }
+  .here { top:0; right:0 }
+  .nse { margin-top:6px; font-size:9px; line-height:1.35; white-space:nowrap }
+  .nse b { font: 700 7.5px Orbitron, sans-serif; letter-spacing:.14em }
+  .info { margin-top:1px; font-size:12px; letter-spacing:.04em; color:#a39a92; white-space:nowrap }
+  .info b { font-weight:600 }
 `;
 %%HOURS%%
 %%ZONES%%
@@ -381,6 +381,14 @@ export const className = `
 const flag = cc => cc ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1A5 + c.charCodeAt(0))) : "🌐";
 const region = cc => { try { return new Intl.DisplayNames(["en"], { type: "region" }).of(cc); } catch (e) { return cc; } };
 // how far ahead (+) or behind (−) a time zone is from here, e.g. "−7h", "+5h 30m", "same time"
+// your own country's exchange, shown under the flag on your clock
+const LOCAL_EX = { KE: { ex: "NSE", tz: "Africa/Nairobi", open: 540, close: 900 } };
+// Hover an exchange to put its city's clock on the big display; leaving the panel (or 8 s idle) brings yours back,
+// like Tech Markets and Weather.
+const pick = (root, k) => { if (!root) return;
+  root.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.dataset.k === k));
+  root.querySelectorAll(".cell").forEach(v => v.classList.toggle("sel", v.dataset.k === k)); };
+const home = e => { const el = e.currentTarget; clearTimeout(window.__ckHome); window.__ckHome = setTimeout(() => pick(el, "here"), 8000); };
 const offset = (tz, now) => { const at = z => new Date(now.toLocaleString("en-US", z ? { timeZone: z } : {}));
   const m = Math.round((at(tz) - at()) / 60000 / 15) * 15; if (!m) return "same time as you";
   const a = Math.abs(m); return (m > 0 ? "+" : "−") + Math.floor(a / 60) + "h" + (a % 60 ? " " + a % 60 + "m" : "") + (m > 0 ? " ahead" : " behind"); };
@@ -389,28 +397,37 @@ export const render = () => {
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone, cc = ZONES[tz], city = (tz.split("/").pop() || "").replace(/_/g, " ");
   const part = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
   return (
-    <div>
-      <div className="here" title={city}><div className="f">{flag(cc)}</div><div className="n">{(cc ? region(cc) : city).toUpperCase()}</div></div>
-      <div className="time num"><b>{now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</b>
-        <span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
-      <div className="date">{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
-      <div className="greet">Good {part}, Anthony</div>
+    <div onMouseLeave={e => pick(e.currentTarget, "here")} onMouseMove={home}>
+      <div className="stage">
+        <div className="view on" data-k="here">
+          <div className="here" title={city}><div className="f">{flag(cc)}</div><div className="n">{(cc ? region(cc) : city).toUpperCase()}</div>
+            {LOCAL_EX[cc] && (s => <div className={"nse " + (s.open ? "up" : "muted")}>
+              <span className="dot" style={{ background: s.open ? "#4ade80" : "#6f665f", boxShadow: s.open ? "0 0 6px #4ade80" : "none" }} />
+              <b>{LOCAL_EX[cc].ex}</b> {s.open ? "OPEN" : "CLOSED"}<br />{s.open ? `closes ${s.dur}` : `opens ${s.dur}`}</div>)(session(LOCAL_EX[cc], now))}</div>
+          <div className="time num"><b>{now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</b>
+            <span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
+          <div className="date">{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
+          <div className="greet">Good {part}, Anthony</div>
+        </div>
+        {EXCHANGES.map(ex => { const s = session(ex, now); return (
+          <div className="view" data-k={ex.city} key={ex.city}>
+            <div className="here"><div className="f">{flag(ex.cc)}</div><div className="n">{ex.city}</div></div>
+            <div className="time num"><b>{s.hm}</b><span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
+            <div className="date">{now.toLocaleDateString("en-GB", { timeZone: ex.tz, weekday: "long", day: "numeric", month: "long" })}
+              <span className="muted"> · {offset(ex.tz, now)}</span></div>
+            <div className="info"><span className="dot" style={{ background: s.open ? "#4ade80" : "#6f665f", boxShadow: s.open ? "0 0 6px #4ade80" : "none" }} />
+              <b style={{ color: s.open ? "#4ade80" : "#e6dcd2" }}>{ex.ex}</b> {s.open ? `open · closes in ${s.dur}` : `closed · opens in ${s.dur}`}</div>
+          </div>); })}
+      </div>
       <div className="ex">
         {EXCHANGES.map(ex => { const s = session(ex, now); return (
-          <div className="cell" key={ex.city}><div className="card">
-            <div className="face">
-              <div className="c">{ex.city}</div>
-              <div className="t num">{s.hm}</div>
-              <div className={"s " + (s.open ? "up" : "muted")}>
-                <span className="dot" style={{ background: s.open ? "#4ade80" : "#6f665f", boxShadow: s.open ? "0 0 6px #4ade80" : "none" }} />
-                {s.open ? `closes ${s.dur}` : `opens ${s.dur}`}</div>
-            </div>
-            <div className="face back">
-              <div className="f">{flag(ex.cc)}</div>
-              <div className="x">{ex.ex}</div>
-              <div className="o num">{offset(ex.tz, now)}</div>
-            </div>
-          </div></div>); })}
+          <div className="cell" key={ex.city} data-k={ex.city} onMouseEnter={e => pick(e.currentTarget.closest(".ex").parentElement, ex.city)}>
+            <div className="c">{flag(ex.cc)} {ex.city}</div>
+            <div className="t num">{s.hm}</div>
+            <div className={"s " + (s.open ? "up" : "muted")}>
+              <span className="dot" style={{ background: s.open ? "#4ade80" : "#6f665f", boxShadow: s.open ? "0 0 6px #4ade80" : "none" }} />
+              {s.open ? `closes ${s.dur}` : `opens ${s.dur}`}</div>
+          </div>); })}
       </div>
     </div>
   );
