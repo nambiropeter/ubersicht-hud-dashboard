@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Market Terminal — live quotes + financial headlines (stdlib only).
 usage: market.py quotes [TICKERS...] | market.py news [N]"""
-import http.cookiejar, json, re, sys, urllib.parse, urllib.request, xml.etree.ElementTree as ET
+import http.cookiejar, json, re, sys, time, urllib.parse, urllib.request, xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 
 UA = {"User-Agent": "Mozilla/5.0"}
@@ -53,7 +53,39 @@ SPARK = ["^IXIC", "SPCX", "AVGO", "TSM", "NVDA", "AAPL", "MSFT", "GOOGL", "META"
 MOVERS = ["PLTR", "ORCL", "NFLX", "ARM", "CRM", "MU", "INTC", "QCOM", "ADBE",
           "UBER", "SHOP", "PANW", "CRWD", "NOW", "IBM", "CSCO", "AMAT", "SNOW", "DELL", "SPOT", "COIN"]
 TECH_FEEDS = [("CNBC Tech", "https://www.cnbc.com/id/19854910/device/rss/rss.html"),
-              ("Yahoo", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA,MSFT,GOOGL,META,AMD&region=US&lang=en-US")]
+              ("Yahoo", "https://feeds.finance.yahoo.com/rss/2.0/headline?s=NVDA,MSFT,GOOGL,META,AMD&region=US&lang=en-US"),
+              ("TechCrunch", "https://techcrunch.com/feed/"),
+              ("Hacker News", "https://hnrss.org/frontpage?points=100")]
+
+# Ranking for a software engineer in the job market: topic weight x freshness (18 h half-life).
+# The strongest matching topic also becomes the row's tag.
+TOPICS = [
+    ("JOBS", 5, r"hir(e|es|ing)|job market|jobs? (report|data|openings)|recruit\w*|salar(y|ies)|compensation|h-?1b|visas?|"
+                r"remote work|return to (the )?office|rto|offshor\w*|outsourc\w*|entry.level|new grads?|graduates|internships?|"
+                r"engineers?|developer jobs|workforce|talent|careers?|resumes?|interviews?"),
+    ("AI", 4, r"ai|a\.i\.|artificial intelligence|llms?|openai|anthropic|claude|chatgpt|gpt-?\d*|gemini|copilot|agents?|agentic|"
+              r"coding assistants?|cursor|vibe coding|machine learning|deepmind|mistral|llama"),
+    ("DEV", 3, r"developers?|programming|programmers?|software|open.source|github|gitlab|apis?|frameworks?|javascript|typescript|"
+               r"python|rust|golang|kubernetes|devops|cloud|aws|azure|vulnerabilit\w*|breach\w*|outages?|databases?|compilers?|linux"),
+    ("BIG TECH", 2, r"google|alphabet|microsoft|meta|amazon|apple|nvidia|netflix|tesla|oracle|ibm|salesforce|intel|spacex"),
+    ("STARTUPS", 2, r"raises?|funding|series [a-f]|seed round|valuation|unicorn|ipo|acquir\w*|acquisition|y combinator"),
+]
+TOPIC_RE = [(tag, w, re.compile(r"\b(" + rx + r")\b", re.I)) for tag, w, rx in TOPICS]
+# investing / markets angle: a story about share prices, not about the industry or jobs
+NOISE_RE = re.compile(r"\b(stocks?|shares|investors?|investment|invest(ing)?|etfs?|dividends?|could be worth|portfolio|price target|"
+                      r"wall street|dow jones|futures|oil|mining|bull market|bear market|retire\w*|millionaire|asset class\w*|"
+                      r"buy (now|today)|earnings call)\b", re.I)
+# ads and promos (e.g. conference ticket deals) are dropped entirely
+PROMO_RE = re.compile(r"(\$\d+ (deal|off)|\d+% off|don.t miss|tickets?|discount|save \$|sponsored|promo code|last chance)", re.I)
+SOURCE_BONUS = {"Hacker News": 1, "TechCrunch": 1}
+
+def rank_for_engineer(h, now):
+    hits = [(tag, w) for tag, w, rx in TOPIC_RE if rx.search(h["t"])]
+    rel = sum(w for _, w in hits) + SOURCE_BONUS.get(h["src"], 0) - (6 if NOISE_RE.search(h["t"]) else 0)
+    if h.get("alert"): rel += 6
+    age_h = max(0, (now - h["ts"]) / 3600) if h["ts"] else 48
+    h["tag"] = "LAYOFFS" if h.get("alert") else (max(hits, key=lambda x: x[1])[0] if hits else "TECH")
+    h["score"] = round((2 + rel) * 0.5 ** (age_h / 18), 3)
 # Headlines about job losses get flagged as alerts (shown in red and pinned to the top of the wire)
 ALERT_RE = re.compile(r"\b(lay ?offs?|laid off|laying off|lays off|job cuts?|workforce reduction|redundanc(y|ies)|"
                       r"downsiz(e|es|ing)|hiring freeze|reduc(e|es|ing) (its )?(workforce|headcount)|"
@@ -78,20 +110,29 @@ def spark(sym):
     except Exception:
         return None
 
-def feed(feeds, n, ai_first=False):
-    out = []
+def feed(feeds, n, ai_first=False, rank=False):
+    from email.utils import parsedate_to_datetime
+    out, seen = [], set()
     for src, url in feeds:
-        try: out += [{"src": src, "t": it.findtext("title").strip(), "l": it.findtext("link"), "d": it.findtext("pubDate")}
-                     for _, it in zip(range(n), ET.fromstring(get(url)).iter("item"))]
+        try:
+            for _, it in zip(range(n), ET.fromstring(get(url)).iter("item")):
+                t = it.findtext("title").strip()
+                if t.lower() in seen: continue
+                seen.add(t.lower()); out.append({"src": src, "t": t, "l": it.findtext("link"), "d": it.findtext("pubDate")})
         except Exception: pass
-    for h in out: h["alert"] = bool(ALERT_RE.search(h["t"]))
+    out = [h for h in out if not PROMO_RE.search(h["t"])]
+    for h in out:
+        h["alert"] = bool(ALERT_RE.search(h["t"]))
+        try: h["ts"] = parsedate_to_datetime(h["d"]).timestamp()
+        except Exception: h["ts"] = 0
     if ai_first:
         for h in out: h["ai"] = bool(re.search(r"\b(" + "|".join(map(re.escape, AI_WORDS)) + r")\b", h["t"].lower()))
-    from email.utils import parsedate_to_datetime
-    def ts(h):
-        try: return parsedate_to_datetime(h["d"]).timestamp()
-        except Exception: return 0
-    out.sort(key=ts, reverse=True)  # newest first
+    if rank:  # layoff alerts first, then relevance x freshness
+        now = time.time()
+        for h in out: rank_for_engineer(h, now)
+        out.sort(key=lambda h: (h["alert"], h["score"]), reverse=True)
+    else:
+        out.sort(key=lambda h: h["ts"], reverse=True)  # newest first
     return out
 
 def market_caps(syms):
@@ -115,7 +156,7 @@ def as_json(kind):
             caps = ex.submit(market_caps, syms)
             data = [q for q in ex.map(spark, syms) if q]
         for q in data: q["cap"] = caps.result().get(q["sym"])
-    elif kind == "tech": data = feed(TECH_FEEDS, 10, ai_first=True)
+    elif kind == "tech": data = feed(TECH_FEEDS, 12, ai_first=True, rank=True)
     else: data = feed(FEEDS, 6)
     print(json.dumps(data))
 

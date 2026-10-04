@@ -655,40 +655,43 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── AI & TECH WIRE ─────────────────────────
-widget("ai-wire", r'''// AI & tech headlines, newest first (AI stories tagged, layoff news flagged red and pinned). Click to open.
+widget("ai-wire", r'''// Top 5 tech stories ranked for a software engineer in the job market (relevance x freshness, see market.py);
+// layoff news is flagged red and pinned. Click to open.
 import { run } from "uebersicht";
 export const command = "%%PY%% ~/.stark/market.py json tech";
 export const refreshFrequency = 15 * 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
   .list { padding:6px 8px }
-  .row { display:flex; align-items:center; gap:10px; height:29px; padding:0 10px; border-radius:8px; cursor:pointer }
+  .row { display:flex; align-items:center; gap:10px; height:46px; padding:0 10px; border-radius:8px; cursor:pointer }
   .row:hover { background:rgba(127,220,255,.07) } .row:hover .t { color:#fff }
-  .tag { flex:none; width:24px; text-align:center; font-size:8.5px; font-weight:800; letter-spacing:.08em; padding:2px 0; border-radius:4px }
-  .src { flex:none; width:66px; font-size:9px; font-weight:700; letter-spacing:.08em; color:#8c8178 }
-  .t { flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#e6dcd2; font-size:12.5px }
+  .tag { flex:none; width:54px; text-align:center; font-size:8.5px; font-weight:800; letter-spacing:.08em; padding:2px 0; border-radius:4px }
+  .src { flex:none; width:86px; white-space:nowrap; font-size:9px; font-weight:700; letter-spacing:.08em; color:#8c8178 }
+  .t { flex:1; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:#e6dcd2; font-size:12.5px; line-height:1.35 }
   .a { flex:none; width:30px; text-align:right; font-size:10.5px; color:#6f665f }
   /* layoff / job-cut headlines: pure red warning row, pinned to the top */
   .row.alert { background:rgba(255,59,48,.16); box-shadow: inset 3px 0 0 #ff3b30; animation: alertGlow 2.6s ease-in-out infinite }
   .row.alert:hover { background:rgba(255,59,48,.26) }
   .row.alert .t, .row.alert:hover .t { color:#ff453a; font-weight:700 }
   .row.alert .src, .row.alert .a { color:#ff8a80 }
-  .row.alert .tag { width:auto; padding:2px 6px; color:#fff; background:#ff3b30 }
+  .row.alert .tag { color:#fff; background:#ff3b30 }
   @keyframes alertGlow { 50% { background:rgba(255,59,48,.24) } }
   .alertsub { color:#ff453a; font-weight:700; margin-right:8px }
 `;
 %%AGO%%
 export const render = ({ output }) => {
   let n = []; try { n = JSON.parse(output); } catch (e) {}
-  n.sort((a, b) => (b.alert - a.alert) || (new Date(b.d) - new Date(a.d)));  // layoff alerts first, then latest
+  // market.py already ranks: layoff alerts first, then relevance to a software engineer x freshness
   const alerts = n.filter(h => h.alert).length;
+  const TAGS = { JOBS: "#ffb35c", AI: "#7fdcff", DEV: "#c4a1ff", "BIG TECH": "#e6dcd2", STARTUPS: "#4ade80", TECH: "#8c8178" };
   return (
     <div>
-      <header><span style={{ color: "#7fdcff" }}>✦</span><h1>AI &amp; TECH WIRE</h1><span className="sub">{alerts > 0 && <span className="alertsub">⚠ {alerts} LAYOFF ALERT{alerts > 1 ? "S" : ""}</span>}CNBC TECH · YAHOO · J.A.R.V.I.S. <b style={{ color: "#7fdcff" }}>BRIEFING</b></span></header>
+      <header><span style={{ color: "#7fdcff" }}>✦</span><h1>AI &amp; TECH WIRE</h1><span className="sub">{alerts > 0 && <span className="alertsub">⚠ {alerts} LAYOFF ALERT{alerts > 1 ? "S" : ""}</span>}TOP 5 · <b style={{ color: "#7fdcff" }}>RANKED FOR SOFTWARE ENGINEERS</b></span></header>
       <div className="list">
-        {n.slice(0, 8).map(h => (
+        {n.slice(0, 5).map(h => (
           <div className={"row" + (h.alert ? " alert" : "")} key={h.l} onClick={() => run(`open "${h.l}"`)}>
-            {h.alert ? <span className="tag">⚠ LAYOFFS</span> : <span className="tag" style={h.ai ? { color: "#7fdcff", background: "rgba(127,220,255,.12)" } : { color: "#6f665f", background: "rgba(255,214,170,.05)" }}>{h.ai ? "AI" : "TECH"}</span>}
+            {h.alert ? <span className="tag">⚠ LAYOFFS</span>
+              : <span className="tag" style={{ color: TAGS[h.tag] || "#8c8178", background: "rgba(255,255,255,.05)" }}>{h.tag || "TECH"}</span>}
             <span className="src">{h.src.toUpperCase()}</span>
             <span className="t">{h.t}</span><span className="a num">{ago(h.d)}</span>
           </div>))}
