@@ -511,8 +511,9 @@ export const className = `
   .go { margin-left:6px; padding:1px 6px; border-radius:5px; background:rgba(255,255,255,.06); color:#e6dcd2; cursor:pointer }
   .go:hover { background:rgba(255,255,255,.12) } .go.busy { color:#ffb35c; cursor:default }
 `;
-// hex around CORE; the side nodes put their labels below, anchored inward so they stay inside the svg
-const NODES = [[36, 24], [164, 24], [14, 70], [186, 70], [36, 116], [164, 116]];
+// ring around CORE (order set in network.sh); side nodes put their labels below, anchored inward so they stay
+// inside the svg; the last two sit top/bottom centre, so they get the short names
+const NODES = [[36, 24], [164, 24], [14, 70], [186, 70], [36, 116], [164, 116], [100, 26], [100, 114]];
 const savedView = () => { try { return localStorage.getItem("conn-view") || "LIVE"; } catch (e) { return "LIVE"; } };
 export const initialState = { output: "", view: savedView() };
 export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: ev.view }

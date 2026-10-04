@@ -6,8 +6,11 @@ dev=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}'); dev=${de
 ip=$(ipconfig getifaddr $dev 2>/dev/null)
 b1=($(netstat -ib -I $dev | awk 'NR==2{print $7, $10}'))
 tmp=$(mktemp -d)
-for pair in "GitHub github.com" "Yahoo finance.yahoo.com" "Claude api.anthropic.com" "Google www.google.com" "Vercel vercel.com" "Supabase supabase.com"; do
-  (n=${pair%% *}; h=${pair#* }; t=$(curl -o /dev/null -s -m 3 -w '%{time_connect}' https://$h); print "$n $t" > $tmp/$n) &
+# order = node slot in the Connections panel (Xbox live auth, not the store page, which is a local CDN edge)
+i=0
+for pair in "Claude api.anthropic.com" "GitHub github.com" "Microsoft www.microsoft.com" "Supabase supabase.com" "Vercel vercel.com" "Yahoo finance.yahoo.com" "Xbox user.auth.xboxlive.com" "Google www.google.com"; do
+  (n=${pair%% *}; h=${pair#* }; t=$(curl -o /dev/null -s -m 3 -w '%{time_connect}' https://$h); print "$n $t" > $tmp/$i-$n) &
+  ((i++))
 done
 sleep 1; b2=($(netstat -ib -I $dev | awk 'NR==2{print $7, $10}')); wait
 svc=""; for f in $tmp/*; do read n t < $f; ms=$(awk -v t=$t 'BEGIN{printf "%.0f", t*1000}'); svc+="{\"name\":\"$n\",\"ms\":$ms},"; done; rm -rf $tmp
