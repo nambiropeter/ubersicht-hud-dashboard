@@ -285,7 +285,7 @@ WARM = [
     ("#6fe8ff", "#7cc8ff"), ("#b388ff", "#b39cff"),
 ]
 
-# ── HUD cursors (SVG crosshairs) ──
+# ── HUD cursor: amber SVG crosshair everywhere (the animated ring rides on top) ──
 def _cursor(color, size=28):
     c = size // 2
     svg = (f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}">'
@@ -293,6 +293,7 @@ def _cursor(color, size=28):
            f'<circle cx="{c}" cy="{c}" r="5.5"/>'
            f'<path d="M{c} 1v6M{c} {size-7}v6M1 {c}h6M{size-7} {c}h6"/></g>'
            f'<circle cx="{c}" cy="{c}" r="1.6" fill="{color}"/></svg>')
+    # fully escaped: a bare // would start a comment in Übersicht's CSS parser
     return f'url("data:image/svg+xml,{urllib.parse.quote(svg, safe="")}") {c} {c}'
 CURSOR = _cursor("#f5b14c") + ", crosshair"
 
@@ -336,14 +337,14 @@ export const command = "date +%s";
 export const refreshFrequency = 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  padding: 18px 18px 16px 20px;
+  box-sizing: border-box; width: 342px; height: 202px; padding: 16px 16px 16px 18px;  /* same outer size as the panels below */
   .time { display:flex; align-items:baseline; gap:8px }
   .time b { font: 200 60px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.03em; line-height:1; color:#ffffff }
   .time span { font: 300 20px -apple-system, sans-serif; color:#f5b14c }
   .date { margin-top:8px; font: 500 14px -apple-system, sans-serif; color:#ebe5dd }
   .greet { margin-top:1px; font-size:12px; letter-spacing:.06em; color:#5f8a99 }
   .ex { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:7px; margin-top:12px }
-  .cell { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:6px 10px }
+  .cell { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:6px 8px; min-width:0 }
   .cell .c { font: 700 8.5px Orbitron, sans-serif; letter-spacing:.16em; color:#8c8178 }
   .cell .t { font-size:15px; font-weight:500; margin:2px 0 }
   .cell .s { font-size:9.5px; white-space:nowrap }
