@@ -260,11 +260,19 @@ const hud = name => el => {
   if (!el) return; const box = el.parentElement; if (!box || box.__hud === "%%BUILD%%") return;
   if (box.__hudOff) box.__hudOff.abort(); const off = new AbortController(), on = { signal: off.signal };
   box.__hud = "%%BUILD%%"; box.__hudOff = off; box.dataset.hud = name;
-  box.getAnimations().forEach(a => a.cancel()); box.style.left = box.style.top = box.style.transition = ""; box.dataset.tether = "";
+  // Hot reloads keep the old DOM: drop handlers an older build left on anything else tagged as this panel
+  // (e.g. an inner element that once got the ref by mistake), so only the panel itself drags.
+  document.querySelectorAll(`[data-hud="${name}"]`).forEach(o => { if (o === box) return;
+    if (o.__hudOff) o.__hudOff.abort(); delete o.__hud; delete o.dataset.hud; delete o.dataset.tether; delete o.dataset.hx; delete o.dataset.hy;
+    o.getAnimations().forEach(a => a.cancel()); o.classList.remove("dragging"); o.style.left = o.style.top = o.style.transition = o.style.zIndex = ""; });
+  box.getAnimations().forEach(a => a.cancel()); box.classList.remove("dragging");
+  box.style.left = box.style.top = box.style.transition = ""; box.dataset.tether = "";
   const anywhere = name === "clock";
   const home = { x: box.offsetLeft, y: box.offsetTop };
   const BASE = "border-color .3s, box-shadow .3s, transform .3s";
-  { const r = box.getBoundingClientRect(); box.dataset.hx = r.left; box.dataset.hy = r.top; }  // chains measure strain from here
+  // chains measure strain from here; layout offsets, because the rect would include a hover/drag scale still easing out
+  { const p = box.offsetParent ? box.offsetParent.getBoundingClientRect() : { left: 0, top: 0 };
+    box.dataset.hx = p.left + home.x; box.dataset.hy = p.top + home.y; }
   let anim = null, done = 0;
   const place = (x, y) => { box.style.transition = BASE; box.style.left = x + "px"; box.style.top = y + "px"; };
   // Under-damped spring, precomputed and played with the Web Animations API: the panel's real position is home
@@ -1686,7 +1694,7 @@ const installLinks = () => {
         g.children[2].setAttribute("cx", x1); g.children[2].setAttribute("cy", y1);
         g.children[3].setAttribute("cx", x2); g.children[3].setAttribute("cy", y2); }); }
     if (window.__hudLinks !== "%%BUILD%%") return;
-    const moving = Object.values(state).some(([t, d]) => t || d > .001);   // dragged or springing home: follow every frame
+    const moving = Object.values(state).some(([t, d]) => t || d > .002);   // dragged or springing home (> ½px): follow every frame
     moving ? requestAnimationFrame(tick) : setTimeout(tick, 500); };
   tick();
 };
