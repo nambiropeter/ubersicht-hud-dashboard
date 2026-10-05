@@ -215,13 +215,14 @@ const syncCheck = (name, props) => {
   else { try { data = JSON.parse(out); } catch (e) { msg = "Unreadable data"; } }
   if (!msg && Array.isArray(data) && !data.length) msg = "Source sent nothing";
   if (!msg && data && data.error) msg = data.reason || (typeof data.error === "string" ? data.error : "Source reported an error");
+  const bad = !!msg;  // the source itself failed (not just a widget's own problem() check)
   if (!msg && data && typeof problem === "function") msg = problem(data);
   // offline explains every failure at once (connections panel and the browser both report it)
   if (msg && (window.__offline || !navigator.onLine)) msg = "No internet";
   if (!msg && out) { s.ok = Date.now(); s.last = props.output; }
   s.msg = msg; setTimeout(syncPaint, 0);
-  // when the script fails, keep showing the last good data under the warning instead of a blank panel
-  return (props.error || !out) && s.last ? { ...props, output: s.last, error: null } : props;
+  // when the script or its source fails, keep showing the last good data under the warning instead of a blank panel
+  return bad && s.last ? { ...props, output: s.last, error: null } : props;
 };
 const syncAgo = t => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "just now" : m < 60 ? m + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago"; };
 const syncPaint = () => document.querySelectorAll("[data-sync]").forEach(el => {
