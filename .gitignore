@@ -20,3 +20,5 @@ hudcursor
 .disk*
 portfolio.json
 .nse-*
+.tor/
+.vpn*

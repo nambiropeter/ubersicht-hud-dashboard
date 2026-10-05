@@ -58,3 +58,4 @@ _stark_greet() {
   fi
 }
 [[ -o interactive && -z $STARK_QUIET ]] && _stark_greet
+alias vpn="$STARK/vpn.sh"                                     # vpn us|uk|sa|off

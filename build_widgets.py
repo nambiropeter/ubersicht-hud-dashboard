@@ -659,6 +659,7 @@ export const render = ({ output }) => {
 # ───────────────────────── CONNECTIONS ─────────────────────────
 widget("connections", r'''// Connections, two views (toggle in the header, remembered):
 // LIVE = throughput and latency to the services you use; LINK = Wi-Fi link, VPN + public IP, last speed test.
+// The VPN row's OFF/US/UK/SA switch runs ~/.stark/vpn.sh (free: Tor with the exit pinned to that country).
 import { run } from "uebersicht";
 export const command = "~/.stark/network.sh";
 export const refreshFrequency = 30 * 1000;
@@ -720,6 +721,7 @@ const NODES = [[36, 24], [164, 24], [14, 70], [186, 70], [36, 116], [164, 116], 
 const savedView = () => { try { return localStorage.getItem("conn-view") || "LIVE"; } catch (e) { return "LIVE"; } };
 export const initialState = { output: "", view: savedView() };
 export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: ev.view }
+  : ev.type === "VPN" ? { ...prev, vpnBusy: ev.busy }
   : ev.type === "SPEED" ? { ...prev, speed: ev.speed, testing: ev.testing } : { ...prev, output: ev.output, error: ev.error };
 const problem = n => (window.__offline = n.ip === "offline" || n.services.every(x => !x.ms)) ? "No internet" : null;
 // per-service [amber from, red from] in ms, set from how each one reaches Nairobi (measured 2026-10-04, DNS + TCP connect):
@@ -856,8 +858,11 @@ const Live = ({ n }) => {
   );
 };
 
-const Link = ({ n, speed, testing, test }) => {
+const Link = ({ n, speed, testing, test, busy, setVpn }) => {
   const w = (n && n.wifi) || {}, v = n && n.vpn, p = n && n.pub, onWifi = w.rssi !== undefined && w.rssi !== 0;
+  const t = n && n.tor, failed = t && t.state.startsWith("failed") ? t.state.replace(/^failed: */, "") : null;
+  const going = busy || (t && t.state === "connecting" && t.cc);   // also when started from the terminal
+  const sel = going || (t && t.state === "on" ? t.cc : "off");
   const b = onWifi ? bars(w.rssi) : 0;
   return (
     <div className="link">
@@ -872,10 +877,15 @@ const Link = ({ n, speed, testing, test }) => {
       </div>
       <div className="row">
         <span className="k">VPN</span>
-        <span className="v">{v ? <span><span className="up">●</span> {v.name}<small>{v.full ? "all traffic" : "split tunnel"}</small></span>
+        <span className="v">{going ? <span><span className="pulse" style={{ color: "#ffb35c" }}>●</span> {going === "off" ? "Stopping" : "Connecting"}…</span>
+          : v && v.tor ? <span><span className="up">●</span> {v.cc.toUpperCase()}<small>via Tor</small></span>
+          : v ? <span><span className="up">●</span> {v.name}<small>{v.full ? "all traffic" : "split tunnel"}</small></span>
+          : failed ? <span><span className="dn">●</span> Failed</span>
           : <span><span className="dim">●</span> <span className="muted">Off</span></span>}</span>
-        <span className="r num">{n && n.ip !== "offline" ? <span><span className="dim">LAN </span>{n.ip}</span> : ""}</span>
-        <span className="d num">{p ? (v ? "Exit " : "Public ") + p.ip + " · " + [p.city, p.cc].filter(Boolean).join(", ") + (p.isp ? " · " + p.isp : "") : "Public IP unknown"}</span>
+        <span className="r"><span className="seg">{["off", "us", "uk", "sa"].map(c => <span key={c} className={sel === c ? "on" : ""}
+          title={c === "off" ? "Disconnect" : "Route browsers and apps out of " + c.toUpperCase() + " (free, via Tor; slower than a paid VPN)"}
+          onClick={() => setVpn(c)}>{c.toUpperCase()}</span>)}</span></span>
+        <span className="d num">{failed && !going ? <span className="dn">{failed}</span> : p ? (v ? "Exit " : "Public ") + p.ip + " · " + [p.city, p.cc].filter(Boolean).join(", ") + (p.isp ? " · " + p.isp : "") : "Public IP unknown"}</span>
       </div>
       <div className="row">
         <span className="k">SPEED</span>
@@ -889,7 +899,7 @@ const Link = ({ n, speed, testing, test }) => {
   );
 };
 
-export const render = ({ output, view, speed: mine, testing: busy }, dispatch) => {
+export const render = ({ output, view, speed: mine, testing: busy, vpnBusy }, dispatch) => {
   let n = null; try { n = JSON.parse(output); } catch (e) {}
   const pick = v => { try { localStorage.setItem("conn-view", v); } catch (e) {} dispatch({ type: "VIEW", view: v }); };
   // a test started from the button wins until the regular refresh has a newer result
@@ -898,12 +908,16 @@ export const render = ({ output, view, speed: mine, testing: busy }, dispatch) =
   const test = () => { dispatch({ type: "SPEED", speed, testing: true });
     run("~/.stark/speedtest.sh now; cat ~/.stark/.speed.json").then(out => {
       let s = speed; try { s = JSON.parse(out); } catch (e) {} dispatch({ type: "SPEED", speed: s, testing: false }); }); };
+  // connecting takes ~10 s (Tor starts and the exit country is checked); then refresh straight away
+  const setVpn = c => { if (vpnBusy) return; dispatch({ type: "VPN", busy: c });
+    run(`~/.stark/vpn.sh ${c} >/dev/null; ~/.stark/network.sh`).then(out => dispatch({ type: "NET", output: out }))
+      .catch(() => {}).then(() => dispatch({ type: "VPN", busy: null })); };
   return (
     <div>
       <header><span style={{ color: "#ffb35c" }}>⟡</span><h1>CONNECTIONS</h1>
-        <span className="sub">{n && n.vpn && <span className="vpn" title={n.vpn.name}>VPN</span>}
+        <span className="sub">{n && n.vpn && <span className="vpn" title={n.vpn.name}>VPN{n.vpn.tor ? " " + n.vpn.cc.toUpperCase() : ""}</span>}
           <span className="seg">{["LIVE", "LINK"].map(v => <span key={v} className={view === v ? "on" : ""} onClick={() => pick(v)}>{v}</span>)}</span></span></header>
-      {view === "LINK" ? <Link n={n} speed={speed} testing={testing} test={test} /> : <Live n={n} />}
+      {view === "LINK" ? <Link n={n} speed={speed} testing={testing} test={test} busy={vpnBusy} setVpn={setVpn} /> : <Live n={n} />}
     </div>
   );
 };''')

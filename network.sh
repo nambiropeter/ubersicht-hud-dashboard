@@ -45,10 +45,18 @@ if [[ -n $vif ]]; then
   vpn="{\"name\":\"${vname:-Tunnel}\",\"full\":$([[ $dev == $vif ]] && print true || print false)}"
 fi
 
-# Public IP + ISP: refresh every 10 min, or right away when the VPN state flips
-pub=$D/.pubip.json; state="$vif$ip"
+# Free country VPN (vpn.sh: Tor with a pinned exit + system SOCKS proxy): wanted country and connecting / on / failed
+tc=$(cat $D/.vpn 2>/dev/null); ts=$(cat $D/.vpn.status 2>/dev/null)
+if [[ $ts == on ]] && ! kill -0 $(cat $D/.tor/tor.pid 2>/dev/null) 2>/dev/null; then ts="failed: Tor stopped, apps can't reach the internet"; fi
+tor=null; [[ -n $tc$ts ]] && tor="{\"cc\":\"$tc\",\"state\":\"${ts//\"/}\"}"
+[[ $ts == on ]] && vpn="{\"name\":\"Tor\",\"cc\":\"$tc\",\"tor\":true}"
+
+# Public IP + ISP: refresh every 10 min, or right away when the VPN state flips.
+# On the Tor VPN the exit IP comes through Tor (ipinfo.io blocks Tor), then ipinfo describes that IP directly.
+pub=$D/.pubip.json; state="$vif$ip$tc$ts"
 if [[ ! -s $pub || $(( $(date +%s) - $(stat -f %m $pub) )) -gt 600 || $(cat $D/.pubip.state 2>/dev/null) != $state ]]; then
-  curl -s -m 4 https://ipinfo.io/json | python3 -c '
+  eip=; [[ $ts == on ]] && eip=$(curl -s -m 15 --socks5-hostname 127.0.0.1:9050 https://check.torproject.org/api/ip | grep -o '"IP":"[^"]*' | cut -d'"' -f4)
+  [[ $ts != on || -n $eip ]] && curl -s -m 4 https://ipinfo.io/${eip:+$eip/}json | python3 -c '
 import json, sys, re
 d = json.load(sys.stdin)
 print(json.dumps({"ip": d["ip"], "city": d.get("city", ""), "cc": d.get("country", ""),
@@ -61,4 +69,4 @@ $D/speedtest.sh &>/dev/null &!   # starts a test in the background only when one
 speed=$(cat $D/.speed.json 2>/dev/null); [[ -n $speed ]] || speed=null
 testing=$([[ -e $D/.speed.lock ]] && print true || print false)
 
-print "{\"dev\":\"$dev\",\"ip\":\"${ip:-offline}\",\"down\":$(( b2[1]-b1[1] )),\"up\":$(( b2[2]-b1[2] )),\"services\":[${svc%,}],\"wifi\":$wifi,\"vpn\":$vpn,\"pub\":$pubj,\"speed\":$speed,\"testing\":$testing}"
+print "{\"dev\":\"$dev\",\"ip\":\"${ip:-offline}\",\"down\":$(( b2[1]-b1[1] )),\"up\":$(( b2[2]-b1[2] )),\"services\":[${svc%,}],\"wifi\":$wifi,\"vpn\":$vpn,\"tor\":$tor,\"pub\":$pubj,\"speed\":$speed,\"testing\":$testing}"
