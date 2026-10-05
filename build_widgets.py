@@ -165,7 +165,12 @@ const Spark = ({ d, w, h, up, base, ts, axis = false, fill = true, sw = 1.6, fil
 };"""
 
 FMT = """const fmt = p => p == null ? "—" : p.toLocaleString("en-US", { maximumFractionDigits: p > 1000 ? 0 : 2, minimumFractionDigits: p > 1000 ? 0 : 2 });
-const pct = c => `${c >= 0 ? "▲" : "▼"} ${Math.abs(c).toFixed(2)}%`;"""
+const pct = c => `${c >= 0 ? "▲" : "▼"} ${Math.abs(c).toFixed(2)}%`;
+// Company / exchange logo from the widgets folder (fetched by ~/.stark/logos.py). A missing one hides itself and is
+// retried a few times a minute apart, since a newly added stock's logo is still downloading on first draw.
+const Logo = ({ s, big }) => <img className={"lg" + (big ? " big" : "")} src={`logos/${s.replace("^", "")}.png`} alt=""
+  onError={e => { const i = e.currentTarget, n = +(i.dataset.n || 0); i.style.display = "none"; if (n < 5) setTimeout(() => {
+    i.dataset.n = n + 1; i.style.display = ""; i.src = i.src.split("?")[0] + "?" + Date.now(); }, 60000); }} />;"""
 
 HOURS = """// Exchange sessions in local time (Mon–Fri), minutes after midnight
 const EXCHANGES = [
@@ -312,6 +317,16 @@ CURSOR = "none"
 
 NET = {"weather", "markets", "ai-wire", "movers", "mail", "connections"}  # panels that need the internet
 
+def after_tag(src, attr, insert):
+    """Put `insert` just inside every opening tag that carries `attr`; the tag's other props may hold arrows (`=>`)."""
+    out, i = [], 0
+    while (j := src.find(attr, i)) >= 0:
+        k, depth = j + len(attr), 0
+        while depth or src[k] != ">":
+            depth += {"{": 1, "}": -1}.get(src[k], 0); k += 1
+        out.append(src[i:k + 1] + insert); i = k + 1
+    return "".join(out) + src[i:]
+
 def widget(name, body):
     x, y, w, h = POS.get(name, (0, 0, 0, 0)); y += DY
     body = (body.replace("%%SHARED%%", SHARED)
@@ -327,16 +342,15 @@ def widget(name, body):
     body = re.sub(r"cursor: ?(default|grabbing|grab|pointer)\b", f"cursor: {CURSOR}", body)
     if name != "aa-links":
         head, mark, tail = body.partition("\nexport const render")
-        tail = re.sub(r"(return \(\s*<div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', tail)
-        tail = re.sub(r"(return <div)>", lambda m: m.group(1) + ' ref={hud("' + name + '")}>', tail)
+        # the ref goes first, so a root with its own props (the clock's hover handlers) still gets dragging + chains
+        tail = re.sub(r"(\n  (?:if \([^\n]*?\) )?return (?:\(\s*)?<div)(?=[\s>])", lambda m: m.group(1) + ' ref={hud("' + name + '")}', tail)
         body = head + mark + tail
         body = body.replace("\nexport const render", "\n" + HUD + "\nexport const render", 1)
     if name not in ("aa-links", "clock"):
         # badge goes in every root the render returns (e.g. loading + loaded), not in helper components above it
         head, mark, tail = body.partition("\nexport const render")
-        ref = 'ref={hud("' + name + '")}>'
         net = ' data-net="1"' if name in NET else ""
-        body = head + mark + tail.replace(ref, ref + '<span className="syncwarn" data-sync="' + name + '"' + net + ' data-every={refreshFrequency} />')
+        body = head + mark + after_tag(tail, 'ref={hud("' + name + '")}', '<span className="syncwarn" data-sync="' + name + '"' + net + ' data-every={refreshFrequency} />')
         body = body.replace("\nexport const render =", "\n" + SYNC + "\nconst __render =", 1)
         body += '\nexport const render = (p, d) => __render(syncCheck("' + name + '", p), d);'
     body = body.replace("%%BUILD%%", BUILD)
@@ -985,6 +999,8 @@ export const className = `
   .add b { font-size:22px; font-weight:300; color:#f5b14c; line-height:1; transition: transform .2s } .add span { font-size:9.5px; letter-spacing:.14em; font-weight:700 }
   .add:hover b { transform: scale(1.15) }
   .tcap { float:right; font-size:9px; color:#6f665f; font-weight:500; margin-top:8px }
+  .lg { width:15px; height:15px; border-radius:4px; background:#fff; padding:1.5px; object-fit:contain; vertical-align:middle; margin:-2px 6px 0 0; box-shadow: 0 0 0 1px rgba(0,0,0,.25) }
+  .lg.big { width:17px; height:17px; border-radius:5px; margin:-3px 7px 0 0 }
 `;
 %%FMT%%
 %%SPARK%%
@@ -1044,13 +1060,13 @@ const Nse = ({ pf, dispatch }) => {
   return (
     <div data-home="PF" onMouseLeave={e => pick(e.currentTarget, "PF")} onMouseMove={home}>
       <div className="stage">
-        {t ? <PfHero k="PF" on label={<span><b>MY NSE PORTFOLIO</b> · {hs.length} STOCK{hs.length === 1 ? "" : "S"} · 3 MONTHS</span>}
+        {t ? <PfHero k="PF" on label={<span><Logo s="NSE" big /><b>MY NSE PORTFOLIO</b> · {hs.length} STOCK{hs.length === 1 ? "" : "S"} · 3 MONTHS</span>}
           big={<span><small>KES</small>{kes(t.value)}</span>} ch={t.pct} d={t.hist} ts={t.ts}
           right={<span>Today <b className={t.day >= 0 ? "up" : "dn"}>{kes(t.day, 1)}</b><br />
             {t.paid ? <span>Total gain <b className={t.value >= t.paid ? "up" : "dn"}>{kes(t.value - t.paid, 1)}</b></span> : <span>Prices {pf.asof || "delayed"}</span>}</span>} />
           : <div className="hero on muted" data-sym="PF">No holdings yet. Click + ADD to put in your first stock.</div>}
         {/* hovering a holding: the big number is what you have in it, and the chart is your stake's value over time */}
-        {hs.map(x => <PfHero key={x.sym} k={x.sym} label={<span><b>MY {x.sym}</b> · {x.name} · {t && t.value ? Math.round(x.value / t.value * 100) : 100}% OF PORTFOLIO</span>}
+        {hs.map(x => <PfHero key={x.sym} k={x.sym} label={<span><Logo s={x.sym} big /><b>MY {x.sym}</b> · {x.name} · {t && t.value ? Math.round(x.value / t.value * 100) : 100}% OF PORTFOLIO</span>}
           big={<span><small>KES</small>{kes(x.value)}</span>} ch={x.pct} d={x.hist.map(v => v * x.shares)} ts={x.ts}
           right={<span>{x.shares} shares × <b>{kes(x.p)}</b><br />Today <b className={x.day >= 0 ? "up" : "dn"}>{kes(x.day, 1)}</b>
             {x.cost ? <span><br />Gain <b className={x.p >= x.cost ? "up" : "dn"}>{kes((x.p - x.cost) * x.shares, 1)}</b></span> : null}</span>} />)}
@@ -1059,7 +1075,7 @@ const Nse = ({ pf, dispatch }) => {
         {show.map(x => (
           <div className={"tile " + (x.ch >= 0 ? "tu" : "td")} key={x.sym} data-sym={x.sym} onClick={() => edit(x.sym)} title="Click to change shares"
             onMouseEnter={e => pick(e.currentTarget.closest(".grid").parentElement, x.sym)}>
-            <div className="top"><span className="s">{x.sym}</span><span className={"c num " + (x.ch >= 0 ? "up" : "dn")}>{pct(x.pct)}</span></div>
+            <div className="top"><span className="s"><Logo s={x.sym} />{x.sym}</span><span className={"c num " + (x.ch >= 0 ? "up" : "dn")}>{pct(x.pct)}</span></div>
             <div className="p num">{kes(x.p)}<span className="tcap">{x.shares} sh · {Math.round(x.value).toLocaleString("en-US")}</span></div>
             <Spark d={x.hist.slice(-22)} base={x.hist[Math.max(0, x.hist.length - 22)]} w={186} h={34} fillOp={.34} />
           </div>))}
@@ -1088,15 +1104,15 @@ export const render = ({ output, view, pf }, dispatch) => {
       {view === "NSE" ? <Nse pf={pf} dispatch={dispatch} /> :
        !hero ? <div className="hero on muted">Connecting to markets…</div> : <div data-home="^IXIC" onMouseLeave={e => pick(e.currentTarget, "^IXIC")} onMouseMove={home}>
         <div className="stage">
-          <HeroView x={hero} label="NASDAQ COMPOSITE · 5 DAYS" on />
+          <HeroView x={hero} label={<span><Logo s="^IXIC" big />NASDAQ COMPOSITE · 5 DAYS</span>} on />
           {top.map((x, i) => <HeroView key={x.sym} x={x}
-            label={<span><b>#{i + 1} {x.sym}</b>{x.name !== x.sym ? " · " + x.name : ""} · 5 DAYS · {cap(x.cap)}</span>} />)}
+            label={<span><Logo s={x.sym} big /><b>#{i + 1} {x.sym}</b>{x.name !== x.sym ? " · " + x.name : ""} · 5 DAYS · {cap(x.cap)}</span>} />)}
         </div>
         <div className="grid">
           {top.map((x, i) => (
             <div className={"tile " + (x.c >= 0 ? "tu" : "td")} key={x.sym} data-sym={x.sym} onClick={() => yahoo(x.sym)}
               onMouseEnter={e => pick(e.currentTarget.closest(".grid").parentElement, x.sym)}>
-              <div className="top"><span className="s"><em className="rk">#{i + 1}</em>{x.sym}</span>
+              <div className="top"><span className="s"><Logo s={x.sym} /><em className="rk">#{i + 1}</em>{x.sym}</span>
                 <span className={"c num " + (x.c >= 0 ? "up" : "dn")}>{pct(x.c)}</span></div>
               <div className={"p num " + moved(x)}>{fmt(x.p)}<span className="tcap">{cap(x.cap)}</span></div>
               <Spark d={x.spark} base={x.prev} w={186} h={34} fillOp={.34} draw={!!moved(x)} />
@@ -1229,6 +1245,9 @@ export const className = `
   .s small { display:block; font-size:8.5px; font-weight:600; letter-spacing:.1em; color:#6f665f; margin-top:-1px }
   .p { text-align:right; font-size:12px }
   .c { text-align:right; font-size:10.5px; font-weight:600; padding:2px 0; border-radius:5px }
+  .s { display:flex; align-items:center } .s > span { display:block }
+  .lg { width:18px; height:18px; border-radius:4px; background:#fff; padding:1.5px; object-fit:contain; vertical-align:middle; margin:0 8px 0 0; box-shadow: 0 0 0 1px rgba(0,0,0,.25) }
+  .lg.big { width:17px; height:17px; border-radius:5px; margin:-3px 7px 0 0 }
 `;
 %%FMT%%
 %%SPARK%%
@@ -1239,7 +1258,7 @@ export const render = ({ output }) => {
   const up = q.filter(x => x.c >= 0).length;
   const Row = x => (
     <div className="row" key={x.sym} onClick={() => run(`open "https://finance.yahoo.com/quote/${x.sym}"`)}>
-      <span className="s">{x.sym}{x.name !== x.sym && <small>{x.name}</small>}</span>
+      <span className="s"><Logo s={x.sym} /><span>{x.sym}{x.name !== x.sym && <small>{x.name}</small>}</span></span>
       <Spark d={x.spark} base={x.prev} w={64} h={18} fill={false} sw={1.4} />
       <span className="p num">{fmt(x.p)}</span>
       <span className={"c num " + (x.c >= 0 ? "up" : "dn")} style={{ background: x.c >= 0 ? "rgba(74,222,128,.08)" : "rgba(248,113,113,.08)" }}>{x.c >= 0 ? "+" : ""}{x.c.toFixed(2)}%</span>

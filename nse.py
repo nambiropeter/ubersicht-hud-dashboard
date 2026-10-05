@@ -56,6 +56,8 @@ def holdings():
 def report():
     hs = holdings()
     if not hs: return {"holdings": [], "total": None, "asof": None}
+    try: __import__("logos").ensure("nse", ["NSE"] + [h["sym"] for h in hs])  # tile logos, fetched once in the background
+    except Exception: pass
     b = board(); st = b["stocks"]
     with ThreadPoolExecutor(6) as ex: hists = dict(zip([h["sym"] for h in hs], ex.map(lambda h: safe(history, h["sym"]), hs)))
     out, missing = [], []

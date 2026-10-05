@@ -190,6 +190,8 @@ def as_json(kind):
     if kind in ("quotes", "movers"):
         syms = SPARK if kind == "quotes" else MOVERS + [x for x in SPARK if x != "^IXIC" and x not in MOVERS]
         cache = load_cache()
+        try: __import__("logos").ensure("us", syms)  # tile/row logos, fetched once in the background
+        except Exception: pass
         with ThreadPoolExecutor(16) as ex:
             caps = ex.submit(market_caps, syms)
             data = [q for q in ex.map(lambda s: spark(s, cache), syms) if q]
