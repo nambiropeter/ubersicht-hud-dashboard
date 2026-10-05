@@ -2,7 +2,7 @@
 """Company logos for the Markets / Movers panels, cached as PNGs in the Übersicht widgets folder (served at /logos/SYM.png).
 usage: logos.py us SYM...   (Yahoo tickers: FMP's free logo CDN)
        logos.py nse SYM...  (NSE tickers: the company's own site, found on its afx.kwayisi.org page)
-Already-cached logos are skipped; a failed lookup is retried after a day (marker: .SYM.miss). Stdlib only."""
+Already-cached logos are skipped; a failed lookup (offline, unknown site) is retried after an hour (marker: .SYM.miss). Stdlib only."""
 import io, os, re, sys, time, urllib.parse, urllib.request
 
 DIR = os.path.expanduser("~/Library/Application Support/Übersicht/widgets/logos")
@@ -71,7 +71,7 @@ def fetch(market, sym):
     out = os.path.join(DIR, sym.replace("^", "") + ".png")
     miss = os.path.join(DIR, "." + sym.replace("^", "") + ".miss")
     if os.path.exists(out) or os.path.exists(out[:-4] + ".svg"): return
-    if os.path.exists(miss) and time.time() - os.path.getmtime(miss) < 86400: return
+    if missed(sym): return
     best = None
     try:
         for url in candidates(market, sym):
@@ -83,10 +83,15 @@ def fetch(market, sym):
     if best: to_png(best, out)
     else: open(miss, "w").close()
 
+def missed(sym):
+    """A recent failed lookup: wait before trying again (so a refresh every 5 min doesn't refetch)."""
+    try: return time.time() - os.path.getmtime(os.path.join(DIR, "." + sym.replace("^", "") + ".miss")) < 3600
+    except OSError: return False
+
 def ensure(market, syms):
     """For the data scripts: fetch any missing logos in a detached process so the widget's output isn't held up."""
     have = set(os.listdir(DIR)) if os.path.isdir(DIR) else set()
-    need = [x for x in syms if x.replace("^", "") + ".png" not in have and x.replace("^", "") + ".svg" not in have]
+    need = [x for x in syms if x.replace("^", "") + ".png" not in have and x.replace("^", "") + ".svg" not in have and not missed(x)]
     if need:
         import subprocess
         subprocess.Popen([sys.executable, os.path.abspath(__file__), market, *need], stdin=subprocess.DEVNULL,
