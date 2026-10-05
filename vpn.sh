@@ -3,7 +3,8 @@
 # using the macOS system SOCKS proxy (browsers and most apps follow it; command-line tools don't).
 # Tor only runs while the VPN is on. The system proxy is switched on only once the exit is verified working.
 #   vpn.sh us|uk      connect or switch country      vpn.sh off   disconnect
-D=~/.stark; T=$D/.tor; PORT=9050
+D=~/.stark; T=$D/.tor; PORT=9050 HPORT=9080   # SOCKS for the system proxy, HTTP CONNECT for terminal tools (vpn.zsh)
+unset https_proxy HTTPS_PROXY all_proxy ALL_PROXY http_proxy HTTP_PROXY   # its own checks must not go through the old exit
 TOR=/opt/homebrew/bin/tor
 typeset -A CC=(us us uk gb)
 
@@ -44,7 +45,7 @@ case $1 in
     mkdir -p $T && chmod 700 $T; : > $T/tor.log
     nodes="{${CC[$1]}}"; [[ $1 != us ]] && { nodes=$(exits ${CC[$1]}); [[ -n $nodes ]] || fail "no ${(U)1} exits online right now"; }
     $TOR --RunAsDaemon 1 --DataDirectory $T --PidFile $T/tor.pid --Log "notice file $T/tor.log" \
-         --SocksPort "127.0.0.1:$PORT" --ExitNodes "$nodes" --StrictNodes 1 >/dev/null 2>&1 || fail "Tor did not start"
+         --SocksPort "127.0.0.1:$PORT" --HTTPTunnelPort "127.0.0.1:$HPORT" --ExitNodes "$nodes" --StrictNodes 1 >/dev/null 2>&1 || fail "Tor did not start"
     for i in {1..90}; do grep -q "Bootstrapped 100%" $T/tor.log && break; sleep 1; done
     grep -q "Bootstrapped 100%" $T/tor.log || fail "Tor could not connect"
     # confirm the exit really is in the chosen country before routing the Mac through it

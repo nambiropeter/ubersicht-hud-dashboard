@@ -2,6 +2,7 @@
 # Connections data (JSON): local IP, throughput (1s sample), latency to the services you use,
 # plus the LINK view: Wi-Fi link, VPN state, public IP/ISP (cached 10 min) and the last speed test.
 D=~/.stark
+unset https_proxy HTTPS_PROXY all_proxy ALL_PROXY   # measure the real link even when run from a VPN terminal
 dev=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}'); dev=${dev:-en0}
 ip=$(ipconfig getifaddr $dev 2>/dev/null)
 b1=($(netstat -ib -I $dev | awk 'NR==2{print $7, $10}'))

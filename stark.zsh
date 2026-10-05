@@ -58,4 +58,4 @@ _stark_greet() {
   fi
 }
 [[ -o interactive && -z $STARK_QUIET ]] && _stark_greet
-alias vpn="$STARK/vpn.sh"                                     # vpn us|uk|off
+source $STARK/vpn.zsh                                         # vpn us|uk|off, and terminal tools follow it
