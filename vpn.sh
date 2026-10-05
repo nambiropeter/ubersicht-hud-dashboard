@@ -1,21 +1,21 @@
 #!/bin/zsh
-# Free country-switching VPN: routes the Mac through Tor with the exit pinned to the US, UK or South Africa,
+# Free country-switching VPN: routes the Mac through Tor with the exit pinned to the US or UK,
 # using the macOS system SOCKS proxy (browsers and most apps follow it; command-line tools don't).
 # Tor only runs while the VPN is on. The system proxy is switched on only once the exit is verified working.
-#   vpn.sh us|uk|sa   connect or switch country      vpn.sh off   disconnect
+#   vpn.sh us|uk      connect or switch country      vpn.sh off   disconnect
 D=~/.stark; T=$D/.tor; PORT=9050
 TOR=/opt/homebrew/bin/tor
-typeset -A CC=(us us uk gb sa za)
+typeset -A CC=(us us uk gb)
 
 services() { networksetup -listallnetworkservices | tail -n +2 | grep -v '^\*'; }
 proxy_on()  { services | while read -r s; do networksetup -setsocksfirewallproxy "$s" 127.0.0.1 $PORT; done; }
 proxy_off() { services | while read -r s; do networksetup -setsocksfirewallproxystate "$s" off; done; }
 tor_stop()  { [[ -s $T/tor.pid ]] && kill $(<$T/tor.pid) 2>/dev/null; rm -f $T/tor.pid; for i in {1..20}; do nc -z 127.0.0.1 $PORT 2>/dev/null || break; sleep .25; done; }
-# UK/SA have ~10 exits each and a few of them geolocate elsewhere (e.g. a South African ISP's IP that ipinfo puts in
-# Romania), so pin Tor to the exits whose IPs really look like that country; cached 6 h. The US has 1000+, so {us} is fine.
+# The UK has only ~10 exits and some can geolocate elsewhere (an SA ISP's exit once showed up in Romania in ipinfo),
+# so pin Tor to the exits whose IPs really look like that country; cached 6 h. The US has 1000+, so {us} is fine.
 exits() {
   local f=$T/exits-$1
-  [[ -s $f && $(( $(date +%s) - $(stat -f %m $f) )) -lt 21600 ]] || /usr/bin/python3 - $1 > $f.tmp <<'PY' && mv $f.tmp $f
+  [[ -s $f && $(( $(date +%s) - $(stat -f %m $f) )) -lt 21600 ]] || { /usr/bin/python3 - $1 > $f.tmp && mv $f.tmp $f; } <<'PY'
 import json, sys, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 cc = sys.argv[1]
@@ -37,7 +37,7 @@ fail() { proxy_off; tor_stop; rm -f $D/.vpn; print -r "failed: $1" > $D/.vpn.sta
 case $1 in
   off)
     proxy_off; tor_stop; rm -f $D/.vpn $D/.vpn.status; print "VPN off" ;;
-  us|uk|sa)
+  us|uk)
     [[ -x $TOR ]] || fail "Tor not installed (brew install tor)"
     print -r $1 > $D/.vpn; print connecting > $D/.vpn.status
     proxy_off; tor_stop                               # switching = restart with the new exit (cached directory makes it quick)
@@ -57,5 +57,5 @@ case $1 in
     done
     [[ $got == ${CC[$1]} ]] || fail "no working ${(U)1} exit right now${got:+ (got ${(U)got[1,2]})}"
     proxy_on; print on > $D/.vpn.status; print "VPN on: ${(U)1}" ;;
-  *) print "usage: vpn.sh us|uk|sa|off"; exit 2 ;;
+  *) print "usage: vpn.sh us|uk|off"; exit 2 ;;
 esac

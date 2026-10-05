@@ -659,7 +659,7 @@ export const render = ({ output }) => {
 # ───────────────────────── CONNECTIONS ─────────────────────────
 widget("connections", r'''// Connections, two views (toggle in the header, remembered):
 // LIVE = throughput and latency to the services you use; LINK = Wi-Fi link, VPN + public IP, last speed test.
-// The VPN row's OFF/US/UK/SA switch runs ~/.stark/vpn.sh (free: Tor with the exit pinned to that country).
+// The VPN row's OFF/US/UK switch runs ~/.stark/vpn.sh (free: Tor with the exit pinned to that country).
 import { run } from "uebersicht";
 export const command = "~/.stark/network.sh";
 export const refreshFrequency = 30 * 1000;
@@ -882,7 +882,7 @@ const Link = ({ n, speed, testing, test, busy, setVpn }) => {
           : v ? <span><span className="up">●</span> {v.name}<small>{v.full ? "all traffic" : "split tunnel"}</small></span>
           : failed ? <span><span className="dn">●</span> Failed</span>
           : <span><span className="dim">●</span> <span className="muted">Off</span></span>}</span>
-        <span className="r"><span className="seg">{["off", "us", "uk", "sa"].map(c => <span key={c} className={sel === c ? "on" : ""}
+        <span className="r"><span className="seg">{["off", "us", "uk"].map(c => <span key={c} className={sel === c ? "on" : ""}
           title={c === "off" ? "Disconnect" : "Route browsers and apps out of " + c.toUpperCase() + " (free, via Tor; slower than a paid VPN)"}
           onClick={() => setVpn(c)}>{c.toUpperCase()}</span>)}</span></span>
         <span className="d num">{failed && !going ? <span className="dn">{failed}</span> : p ? (v ? "Exit " : "Public ") + p.ip + " · " + [p.city, p.cc].filter(Boolean).join(", ") + (p.isp ? " · " + p.isp : "") : "Public IP unknown"}</span>
