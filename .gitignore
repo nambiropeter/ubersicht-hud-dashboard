@@ -18,6 +18,7 @@ hudcursor
 .yahoo-*
 !docs/*.png
 .disk*
+.battery*
 portfolio.json
 .nse-*
 .tor/

@@ -559,7 +559,7 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── SYSTEM ─────────────────────────
-widget("system", r'''// System monitor: CPU, memory, disk, battery + a fan whose speed follows the combined load.
+widget("system", r'''// System monitor: CPU, memory, disk, battery charge + battery health (maximum capacity, cycles, condition).
 export const command = "~/.stark/system.sh";
 export const refreshFrequency = 10 * 1000;
 export const className = `
@@ -569,16 +569,14 @@ export const className = `
   .ring b { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:500 }
   .ring b small { font-size:8.5px; color:#8c8178; margin-left:1px }
   .rl { margin-top:7px; letter-spacing:.18em }
-  .fan .rot { position:absolute; inset:0; will-change: transform }
-  .fan .blur { position:absolute; inset:5px; border-radius:50%; transition: opacity 1.5s }
-  .fan b { font-size:10px; font-weight:700; color:#1a1512 }
+  .rs { margin-top:3px; font-size:9.5px; color:#a39a92; white-space:nowrap }
   .foot { display:flex; justify-content:space-between; margin:6px 16px 0; padding-top:10px; border-top:1px solid rgba(255,214,170,.08); font-size:10.5px; color:#a39a92 }
   .foot b { color:#e6dcd2; font-weight:500 }
 `;
-const Ring = ({ v, col, label }) => {
+const Ring = ({ v, col, label, sub, title }) => {
   const r = 23, C = 2 * Math.PI * r, f = Math.max(0, Math.min(100, v)) / 100;
   return (
-    <div>
+    <div title={title}>
       <div className="ring">
         <svg width="56" height="56" viewBox="0 0 56 56">
           <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,214,170,.08)" strokeWidth="4.5" />
@@ -588,6 +586,7 @@ const Ring = ({ v, col, label }) => {
         <b className="num">{Math.round(v)}<small>%</small></b>
       </div>
       <div className="lbl rl">{label}</div>
+      {sub && <div className="rs num">{sub}</div>}
     </div>
   );
 };
@@ -595,69 +594,14 @@ const heat = v => v > 85 ? "#f87171" : v > 65 ? "#ffb35c" : null;
 // Combined load: CPU counts most, then memory, battery drain (a charging Mac counts a little) and disk.
 const loadOf = s => Math.round(Math.max(0, Math.min(100,
   .45 * s.cpu + .25 * s.mem + .2 * (s.charging ? 25 : 100 - s.batt) + .1 * s.disk)));
-// Revolutions per second: lazy 0.25 at idle, a blur at 3.5 flat out (exponential, so every step is visible).
-const rps = load => 0.25 * Math.pow(14, load / 100);
-// The rotor keeps spinning across refreshes; a new target speed ramps in (eased) instead of jumping.
-// The number in the hub follows the rotor, so it reads the fan's real speed (0-100) while it ramps.
-const level = rate => Math.round(Math.max(0, Math.min(100, 100 * Math.log(rate / 0.25) / Math.log(14))));
-const ramp = (el, to, ms) => {
-  const anim = el.__spin, from = anim.playbackRate, t0 = performance.now();
-  const num = el.parentElement && el.parentElement.querySelector("b.num");
-  clearInterval(el.__ramp);
-  const step = () => {
-    const k = Math.min(1, (performance.now() - t0) / ms), e = 1 - Math.pow(1 - k, 3);
-    anim.playbackRate = from + (to - from) * e;
-    if (num) num.textContent = level(anim.playbackRate);
-    if (k >= 1) clearInterval(el.__ramp);
-  };
-  step(); el.__ramp = setInterval(step, 30);
-};
-const target = el => rps(Math.min(100, el.__load + (el.__boost || 0)));
-const spin = load => el => {
-  if (!el) return;
-  el.__load = load;
-  if (!el.__spin || el.__spin.playState === "idle") {
-    el.getAnimations().forEach(a => a.cancel());
-    el.__spin = el.animate([{ transform: "rotate(0deg)" }, { transform: "rotate(360deg)" }], { duration: 1000, iterations: Infinity });
-    el.__spin.playbackRate = target(el);
-  }
-  ramp(el, target(el), 1500);
-};
-// Click the fan to rev it: each click adds 25 to its speed (up to 100), then it winds back down 3 s after the last click.
-const rev = e => {
-  const el = e.currentTarget.querySelector(".rot");
-  if (!el || !el.__spin) return;
-  el.__boost = Math.min(100 - el.__load, (el.__boost || 0) + 25);
-  ramp(el, target(el), 350);
-  clearTimeout(el.__cool);
-  el.__cool = setTimeout(() => { el.__boost = 0; ramp(el, target(el), 2500); }, 3000);
-};
-const Fan = ({ load }) => {
-  const col = load > 85 ? "#f87171" : load > 65 ? "#ffb35c" : "#ebe5dd";
-  const blade = "M30.3 19.3 Q34 13.2 46.4 15.1 C31.7 7.3 24.1 13.5 24.9 19.5 Z";  // swept blade: hub root to a tip trailing 55° round
-  return (
-    <div>
-      <div className="ring fan" onClick={rev} title="Click to rev">
-        <svg width="56" height="56" viewBox="0 0 56 56" style={{ position: "absolute", inset: 0 }}>
-          <circle cx="28" cy="28" r="25.5" fill="rgba(255,214,170,.035)" stroke="rgba(255,214,170,.14)" strokeWidth="1.5" />
-          <circle cx="28" cy="28" r="23" fill="none" stroke={col} strokeOpacity=".35" strokeWidth=".8" strokeDasharray="1.5 3.2" />
-        </svg>
-        <div className="blur" style={{ opacity: Math.max(0, (load - 35) / 90),
-          background: `radial-gradient(circle, transparent 30%, ${col}22 55%, ${col}10 75%, transparent 78%)` }} />
-        <div className="rot" ref={spin(load)}>
-          <svg width="56" height="56" viewBox="0 0 56 56">
-            {[0, 1, 2, 3, 4, 5].map(i => <path key={i} d={blade} transform={`rotate(${i * 60} 28 28)`}
-              fill={col} fillOpacity=".8" stroke={col} strokeWidth=".6" strokeLinejoin="round" />)}
-          </svg>
-        </div>
-        <svg width="56" height="56" viewBox="0 0 56 56" style={{ position: "absolute", inset: 0 }}>
-          <circle cx="28" cy="28" r="10" fill={col} stroke="#1a1512" strokeOpacity=".5" strokeWidth="2" />
-        </svg>
-        <b className="num"></b>
-      </div>
-      <div className="lbl rl">FAN</div>
-    </div>
-  );
+// Battery health: maximum capacity as the ring, cycles + condition under it. Apple calls 80% or less worn,
+// and any condition other than "Normal" (e.g. "Service Recommended") turns it red.
+const Health = ({ s }) => {
+  const ok = !s.condition || s.condition === "Normal";
+  const col = !ok || s.health <= 80 ? "#f87171" : s.health <= 85 ? "#ffb35c" : "#4ade80";
+  return <Ring v={s.health ?? 0} col={col} label="HEALTH"
+    sub={<span>{s.cycles ?? "—"} cyc · <span className={ok ? "up" : "dn"}>{ok ? "OK" : "SERVICE"}</span></span>}
+    title={`Maximum capacity ${s.health ?? "?"}% · ${s.cycles ?? "?"} charge cycles · condition: ${s.condition || "unknown"}`} />;
 };
 export const render = ({ output }) => {
   let s = null; try { s = JSON.parse(output); } catch (e) {}
@@ -671,7 +615,7 @@ export const render = ({ output }) => {
         <Ring v={s.mem} col={heat(s.mem) || "#a78bfa"} label="MEMORY" />
         <Ring v={s.disk} col={heat(s.disk) || "#ffb35c"} label="DISK" />
         <Ring v={s.batt} col={s.batt < 20 ? "#f87171" : "#4ade80"} label={s.charging ? "⚡ POWER" : "BATTERY"} />
-        <Fan load={load} />
+        <Health s={s} />
       </div>}
       {s && <div className="foot num"><span>Uptime <b>{s.uptime}</b></span><span>Processes <b>{s.procs}</b></span><span>Free <b>{s.diskFree}</b></span></div>}
     </div>
