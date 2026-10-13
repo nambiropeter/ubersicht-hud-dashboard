@@ -7,7 +7,7 @@ from datetime import date, datetime
 DATA = os.path.expanduser("~/Library/Application Support/JobTracker/applications.json")
 FOLLOW_UP_DAYS = 14  # same as the app
 UPCOMING_DAYS = 30
-GHOST_DAYS = {"applied": 30, "interview": 21}  # same as the app: no reply this long = rejected
+GHOST_DAYS = {"applied": 60, "interview": 60}  # same as the app: no reply this long = rejected
 
 
 def day(s):
