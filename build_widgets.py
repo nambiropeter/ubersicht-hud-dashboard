@@ -21,7 +21,7 @@ POS = {
     "system":  (L, 522, 340, 200), "connections": (L, 742, 340, 190),
     "markets": (C, 56, 686, 560),  "ai-wire":     (C, 636, 686, 296),
     "batcave": (R, 56, 340, 252),  "mail":        (R, 328, 340, 288),
-    "movers":  (R, 636, 340, 296),
+    "jobs":    (R, 636, 340, 296),
 }
 
 SHARED = """
@@ -323,7 +323,7 @@ WARM = [
 # itself (Übersicht's WebKit ignores image cursors; CSS can't be trusted to draw it).
 CURSOR = "none"
 
-NET = {"weather", "markets", "ai-wire", "movers", "mail", "connections"}  # panels that need the internet
+NET = {"weather", "markets", "ai-wire", "mail", "connections"}  # panels that need the internet
 
 def after_tag(src, attr, insert):
     """Put `insert` just inside every opening tag that carries `attr`; the tag's other props may hold arrows (`=>`)."""
@@ -1180,50 +1180,71 @@ export const render = ({ output }) => {
   );
 };''')
 
-# ───────────────────────── TECH MOVERS ─────────────────────────
-widget("movers", r'''// Today's top 3 gainers and top 3 losers across the tech pool. Edit the pool in ~/.stark/market.py (MOVERS).
+# ───────────────────────── JOB HUNT ─────────────────────────
+widget("jobs", r'''// Job hunt from the Job Tracker app (~/Developer/JobTracker): next steps, follow-ups, and what's still in play.
 import { run } from "uebersicht";
-export const command = "%%PY%% ~/.stark/market.py json movers";
-export const refreshFrequency = 5 * 60 * 1000;
+export const command = "%%PY%% ~/.stark/jobs.py";
+export const refreshFrequency = 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  .list { padding:5px 8px }
-  .row { display:grid; grid-template-columns: 1fr 64px 66px 62px; align-items:center; gap:8px; height:31px; padding:0 9px; border-radius:8px; cursor:pointer }
+  .stats { display:grid; grid-template-columns: repeat(4, 1fr); gap:6px; margin:0 14px 4px }
+  .st { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:10px; padding:5px 9px }
+  .st .v { font: 300 19px -apple-system, "SF Pro Display", sans-serif; line-height:1.15; color:#ffffff }
+  .st .v small { font-size:11px; color:#8c8178; margin-left:1px }
+  .list { padding:0 8px }
   .grp { display:flex; align-items:center; gap:8px; padding:6px 9px 2px; font-size:9px; font-weight:700; letter-spacing:.14em }
   .grp i { flex:1; height:1px; background:rgba(255,255,255,.06) }
-  .none { padding:6px 9px; font-size:11px; color:#6f665f }
+  .row { display:grid; grid-template-columns: 20px 1fr auto; align-items:center; gap:9px; height:30px; padding:0 9px; border-radius:8px; cursor:pointer }
   .row:hover { background:rgba(255,179,92,.08) }
-  .s { font-size:11.5px; font-weight:700; letter-spacing:.04em; color:#e6dcd2 }
-  .s small { display:block; font-size:8.5px; font-weight:600; letter-spacing:.1em; color:#6f665f; margin-top:-1px }
-  .p { text-align:right; font-size:12px }
-  .c { text-align:right; font-size:10.5px; font-weight:600; padding:2px 0; border-radius:5px }
-  .s { display:flex; align-items:center } .s > span { display:block }
-  .lg { width:18px; height:18px; border-radius:4px; background:#fff; padding:1.5px; object-fit:contain; vertical-align:middle; margin:0 8px 0 0; box-shadow: 0 0 0 1px rgba(0,0,0,.25) }
-  .lg.big { width:17px; height:17px; border-radius:5px; margin:-3px 7px 0 0 }
+  .lg { width:20px; height:20px; border-radius:5px; display:grid; place-items:center; font-size:10.5px; font-weight:700; color:#fff }
+  .nm { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; color:#e6dcd2 }
+  .nm span { font-size:10.5px; color:#857d75; margin-left:6px }
+  .tag { font-size:10px; font-weight:600; padding:2px 6px; border-radius:5px; white-space:nowrap; color:#b8aea4; background:rgba(255,255,255,.05) }
+  .tag.soon { color:#f5b14c; background:rgba(245,177,76,.1) }
+  .tag.late { color:#ff6b6b; background:rgba(255,107,107,.1) }
+  .empty { padding:46px 26px 0; text-align:center; color:#8c8178; line-height:1.6 }
+  .empty b { color:#f5b14c; font-weight:600 }
 `;
-%%FMT%%
-%%SPARK%%
+const STATUS = { applied: ["Applied", "#7cc8ff"], interview: ["Interview", "#f5b14c"], offer: ["Offer", "#4fd18b"] };
+const TINTS = ["#8a6a4f", "#5f7a8c", "#6d7f5a", "#8c5f6a", "#6a6390", "#7f7356"];
+const tint = s => { let h = 0; for (const c of (s || "").toLowerCase()) h = (h * 31 + c.charCodeAt(0)) >>> 0; return TINTS[h % TINTS.length]; };
+const due = (d, left) => left < 0 ? -left + "d late" : left === 0 ? "Today" : left === 1 ? "Tmrw"
+  : new Date(d + "T00:00").toLocaleDateString("en-GB", left < 7 ? { weekday: "short" } : { day: "numeric", month: "short" });
+const open = () => run(`open -a "Job Tracker"`);
 export const render = ({ output }) => {
-  let q = []; try { q = JSON.parse(output); } catch (e) {}
-  const gain = q.filter(x => x.c > 0).sort((a, b) => b.c - a.c).slice(0, 3);
-  const lose = q.filter(x => x.c < 0).sort((a, b) => a.c - b.c).slice(0, 3);
-  const up = q.filter(x => x.c >= 0).length;
-  const Row = x => (
-    <div className="row" key={x.sym} onClick={() => run(`open "https://finance.yahoo.com/quote/${x.sym}"`)}>
-      <span className="s"><Logo s={x.sym} /><span>{x.sym}{x.name !== x.sym && <small>{x.name}</small>}</span></span>
-      <Spark d={x.spark} base={x.prev} w={64} h={18} fill={false} sw={1.4} />
-      <span className="p num">{fmt(x.p)}</span>
-      <span className={"c num " + (x.c >= 0 ? "up" : "dn")} style={{ background: x.c >= 0 ? "rgba(74,222,128,.08)" : "rgba(248,113,113,.08)" }}>{x.c >= 0 ? "+" : ""}{x.c.toFixed(2)}%</span>
-    </div>);
+  let j = null; try { j = JSON.parse(output); } catch (e) {}
+  const c = (j && j.counts) || {}, ev = (j && j.events) || [];
+  // 5 rows fit under the stats: up to 3 next steps, up to 2 follow-ups, the rest filled with what's in play
+  const seen = new Set(), groups = []; let room = 5;
+  const add = (label, color, items, max, row) => { const take = items.filter(x => !seen.has(x.id)).slice(0, Math.min(max, room));
+    if (!take.length) return; take.forEach(x => seen.add(x.id)); room -= take.length; groups.push([label, color, take.map(row)]); };
+  add("◷ NEXT UP", "#f5b14c", ev, 3, e => [e, e.next + " · " + due(e.date, e.left), e.left < 0 ? "late" : e.left <= 3 ? "soon" : ""]);
+  add("⚑ FOLLOW UP", "#ff9f6b", (j && j.followups) || [], 2, f => [f, f.days + "d no reply", "late"]);
+  if (groups.length > 1) room = Math.min(room, 5 - groups.length);  // each extra heading costs about a row
+  add("● IN PLAY", "#7cc8ff", (j && j.active) || [], 5, a => [a, STATUS[a.status][0] + (a.days != null ? " · " + (a.days ? a.days + "d" : "today") : ""), ""]);
+  const first = ev[0];
   return (
     <div>
-      <header><span style={{ color: "#4ade80" }}>⇅</span><h1>TECH MOVERS</h1><span className="sub"><b style={{ color: "#4ade80" }}>{up}</b> UP · <b style={{ color: "#f87171" }}>{q.length - up}</b> DOWN · OF {q.length}</span></header>
-      <div className="list">
-        <div className="grp up">▲ TOP GAINERS<i /></div>
-        {gain.length ? gain.map(Row) : <div className="none">Nothing up today</div>}
-        <div className="grp dn">▼ TOP LOSERS<i /></div>
-        {lose.length ? lose.map(Row) : <div className="none">Nothing down today</div>}
-      </div>
+      <header><span style={{ color: "#f5b14c" }}>◆</span><h1>JOB HUNT</h1>
+        <span className="sub"><b>{c.applied || 0}</b> AWAITING{first ? " · " + (first.next + " " + due(first.date, first.left)).toUpperCase() : ""}</span></header>
+      {!j ? <div className="empty">Reading Job Tracker…</div>
+        : !j.apps ? <div className="empty">Add applications in <b>Job Tracker</b> and they'll show up here.</div>
+        : <div>
+        <div className="stats">
+          {[["SENT", j.sent], ["INTERVIEW", c.interview || 0], ["OFFERS", c.offer || 0], ["REPLIES", j.rate, "%"]].map(([l, v, u]) =>
+            <div className="st" key={l}><div className="lbl">{l}</div><div className="v num">{v}{u && <small>{u}</small>}</div></div>)}
+        </div>
+        <div className="list">
+          {groups.map(([label, color, rows]) => <div key={label}>
+            <div className="grp" style={{ color }}>{label}<i /></div>
+            {rows.map(([x, tag, cls]) => (
+              <div className="row" key={label + x.id} onClick={open}>
+                <span className="lg" style={{ background: tint(x.company) }}>{(x.company.trim()[0] || "?").toUpperCase()}</span>
+                <span className="nm">{x.company}<span>{x.role}</span></span>
+                <span className={"tag " + cls}>{tag}</span>
+              </div>))}
+          </div>)}
+        </div></div>}
     </div>
   );
 };''')
@@ -1586,8 +1607,8 @@ const installMonkey = () => {
   window.__monkeyNow = async () => { for (const go of troop) { const p = go(); if (await Promise.race([p, Promise.resolve("running")]) === "running") return "sent"; } return "all out"; };
 };
 const PAIRS = [["clock", "weather"], ["weather", "system"], ["system", "connections"], ["markets", "ai-wire"],
-  ["batcave", "mail"], ["mail", "movers"], ["clock", "markets"], ["weather", "markets"], ["system", "ai-wire"],
-  ["connections", "ai-wire"], ["markets", "batcave"], ["markets", "mail"], ["ai-wire", "movers"]];
+  ["batcave", "mail"], ["mail", "jobs"], ["clock", "markets"], ["weather", "markets"], ["system", "ai-wire"],
+  ["connections", "ai-wire"], ["markets", "batcave"], ["markets", "mail"], ["ai-wire", "jobs"]];
 const LAYOUT_VERSION = "3";  // clears positions saved back when panels could be rearranged
 const installLinks = () => {
   if (window.__hudLinks === "%%BUILD%%") return; window.__hudLinks = "%%BUILD%%";
