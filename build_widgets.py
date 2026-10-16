@@ -13,15 +13,13 @@ W = os.path.expanduser("~/Library/Application Support/Übersicht/widgets")
 # Übersicht runs widgets with a minimal PATH, so bake in the absolute python3 path at build time
 PY = shutil.which("python3") or "/usr/bin/python3"
 
-# ── Layout grid (screen 1470×956 pt): 32 | 340 | 20 | 686 | 20 | 340 | 32 ──
-L, C, R = 32, 392, 1098
+# ── Layout grid (screen 1470×956 pt): 32 | 400 | 20 | 566 | 20 | 400 | 32 ──
+L, C, R = 32, 452, 1038
 DY = -36  # Übersicht's canvas starts below the menu bar
 POS = {
-    "clock":   (L, 56, 340, 200),  "weather":     (L, 276, 340, 226),
-    "system":  (L, 522, 340, 200), "connections": (L, 742, 340, 190),
-    "markets": (C, 56, 686, 560),  "ai-wire":     (C, 636, 686, 296),
-    "batcave": (R, 56, 340, 252),  "mail":        (R, 328, 340, 288),
-    "jobs":    (R, 636, 340, 296),
+    "clock":   (L, 56, 400, 230),  "ai-wire": (C, 56, 566, 428),   "batcave":     (R, 56, 400, 276),
+    "weather": (L, 306, 400, 320), "jobs":    (C, 504, 566, 428),  "mail":        (R, 352, 400, 330),
+    "system":  (L, 646, 400, 286),                                 "connections": (R, 702, 400, 230),
 }
 
 SHARED = """
@@ -172,34 +170,19 @@ const Logo = ({ s, big }) => <img className={"lg" + (big ? " big" : "")} src={`l
   onError={e => { const i = e.currentTarget, n = +(i.dataset.n || 0); i.style.display = "none"; if (n < 5) setTimeout(() => {
     i.dataset.n = n + 1; i.style.display = ""; i.src = i.src.split("?")[0] + "?" + Date.now(); }, 60000); }} />;"""
 
-HOURS = """// Exchange sessions in local time (Mon–Fri), minutes after midnight
-const EXCHANGES = [
-  { city: "NEW YORK", tz: "America/New_York", open: 570, close: 960, cc: "US", ex: "NYSE · NASDAQ" },
-  { city: "LONDON",   tz: "Europe/London",    open: 480, close: 990, cc: "GB", ex: "LSE" },
-  { city: "TOKYO",    tz: "Asia/Tokyo",       open: 540, close: 900, cc: "JP", ex: "TOKYO SE" },
+HOURS = """// World clocks under the main time (hover one to put it on the big display)
+const CITIES = [
+  { city: "NEW YORK", tz: "America/New_York", cc: "US" },
+  { city: "LONDON",   tz: "Europe/London",    cc: "GB" },
+  { city: "TOKYO",    tz: "Asia/Tokyo",       cc: "JP" },
 ];
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const weekday = d => d !== "Sat" && d !== "Sun";
 const localParts = (tz, now) => {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit" })
+  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour12: false, hour: "2-digit", minute: "2-digit" })
     .formatToParts(now).map(x => [x.type, x.value]));
-  const hr = +p.hour % 24;
-  return { day: p.weekday, min: hr * 60 + +p.minute, hm: String(hr).padStart(2, "0") + ":" + p.minute };
+  const h = +p.hour % 24;
+  return { h, hm: String(h).padStart(2, "0") + ":" + p.minute };
 };
-const session = (ex, now) => {
-  const { day, min, hm } = localParts(ex.tz, now);
-  const open = weekday(day) && min >= ex.open && min < ex.close;
-  let left = ex.close - min;
-  if (!open) {
-    const d0 = DAYS.indexOf(day);
-    for (let i = 0; i < 8; i++) {
-      if (weekday(DAYS[(d0 + i) % 7]) && (i > 0 || min < ex.open)) { left = i * 1440 + ex.open - min; break; }
-    }
-  }
-  const dur = left >= 1440 ? `${Math.floor(left / 1440)}d ${Math.floor(left % 1440 / 60)}h` : `${Math.floor(left / 60)}h ${left % 60}m`;
-  return { open, hm, dur };
-};"""
-
+"""
 
 # Time zone -> country code (from the system tz database), so the clock can show the flag of wherever the Mac thinks it is.
 _zones = {}
@@ -323,7 +306,7 @@ WARM = [
 # itself (Übersicht's WebKit ignores image cursors; CSS can't be trusted to draw it).
 CURSOR = "none"
 
-NET = {"weather", "markets", "ai-wire", "mail", "connections"}  # panels that need the internet
+NET = {"weather", "ai-wire", "mail", "connections"}  # panels that need the internet
 
 def after_tag(src, attr, insert):
     """Put `insert` just inside every opening tag that carries `attr`; the tag's other props may hold arrows (`=>`)."""
@@ -340,7 +323,8 @@ def widget(name, body):
     body = (body.replace("%%SHARED%%", SHARED)
                 .replace("%%POS%%", f"left: {x}px; top: {y}px; width: {w}px; height: {h}px;")
                 .replace("%%ZONES%%", ZONES).replace("%%PY%%", PY).replace("%%AGO%%", AGO).replace("%%SPARK%%", SPARK)
-                .replace("%%FMT%%", FMT).replace("%%HOURS%%", HOURS))
+                .replace("%%FMT%%", FMT).replace("%%HOURS%%", HOURS)
+                .replace("%%W2%%", str(w + 2)).replace("%%H2%%", str(h + 2)))
     for old, new in THEME:
         body = body.replace(old, new)
     for old, new in WARM:
@@ -367,92 +351,78 @@ def widget(name, body):
 
 
 # ───────────────────────── CLOCK ─────────────────────────
-widget("clock", r'''// Clock, greeting and world-market sessions.
+widget("clock", r'''// Clock, greeting and world clocks (hover a city to put its time on the big display).
 export const command = "date +%s";
 export const refreshFrequency = 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  box-sizing: border-box; width: 342px; height: 202px; padding: 16px 16px 16px 18px;  /* same outer size as the panels below */
+  box-sizing: border-box; width: %%W2%%px; height: %%H2%%px; padding: 20px 20px 18px 22px;  /* same outer size as the panels below */
   .time { display:flex; align-items:baseline; gap:8px }
-  .time b { font: 200 60px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.03em; line-height:1; color:#ffffff }
-  .time span { font: 300 20px -apple-system, sans-serif; color:#f5b14c }
-  .date { margin-top:8px; font: 500 14px -apple-system, sans-serif; color:#ebe5dd }
-  .greet { margin-top:1px; font-size:12px; letter-spacing:.06em; color:#5f8a99 }
-  .ex { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:7px; margin-top:12px }
-  .cell { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:6px 8px; min-width:0 }
+  .time b { font: 200 68px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.03em; line-height:1; color:#ffffff }
+  .time span { font: 300 22px -apple-system, sans-serif; color:#f5b14c }
+  .date { margin-top:10px; font: 500 15px -apple-system, sans-serif; color:#ebe5dd }
+  .greet { margin-top:2px; font-size:12.5px; letter-spacing:.06em; color:#5f8a99 }
+  .ex { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px; margin-top:18px }
+  .cell { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:8px 11px; min-width:0 }
   .cell .c { font: 700 8.5px Orbitron, sans-serif; letter-spacing:.1em; color:#8c8178; white-space:nowrap; overflow:hidden }
-  .cell .t { font-size:15px; font-weight:500; margin:2px 0 }
-  .cell .s { font-size:9.5px; white-space:nowrap }
-  .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:5px; vertical-align:1px }
+  .cell .t { font-size:17px; font-weight:500; margin:3px 0 2px }
+  .cell .s { font-size:10px; white-space:nowrap; color:#a39a92 }
   .here { position:absolute; text-align:center; cursor:default }
-  .here .f { font-size:34px; line-height:1; display:inline-block; transform-origin: 8% 50%; filter: drop-shadow(0 3px 8px rgba(0,0,0,.45)) }
+  .here .f { font-size:38px; line-height:1; display:inline-block; transform-origin: 8% 50%; filter: drop-shadow(0 3px 8px rgba(0,0,0,.45)) }
   .here:hover .f { animation: wave 1.1s ease-in-out infinite }
   @keyframes wave { 0%, 100% { transform: perspective(80px) rotateY(0) skewY(0) } 25% { transform: perspective(80px) rotateY(-18deg) skewY(-3deg) }
                     75% { transform: perspective(80px) rotateY(12deg) skewY(2deg) } }
-  .here .n { font: 700 7.5px Orbitron, sans-serif; letter-spacing:.18em; color:#8c8178; margin-top:3px }
+  .here .n { font: 700 7.5px Orbitron, sans-serif; letter-spacing:.18em; color:#8c8178; margin-top:4px }
   .cell { cursor:default; transition: background .25s, border-color .25s }
   .cell:hover, .cell.sel { background:rgba(255,255,255,.075); border-color: rgba(245,177,76,.35) }
   .stage { display:grid }
   .view { grid-area: 1 / 1; position:relative; opacity:0; visibility:hidden; transition: opacity .25s, visibility .25s }
   .view.on { opacity:1; visibility:visible }
   .here { top:0; right:0 }
-  .nse { margin-top:6px; font-size:9px; line-height:1.35; white-space:nowrap }
-  .nse b { font: 700 7.5px Orbitron, sans-serif; letter-spacing:.14em }
-  .info { margin-top:1px; font-size:12px; letter-spacing:.04em; color:#a39a92; white-space:nowrap }
-  .info b { font-weight:600 }
 `;
 %%HOURS%%
 %%ZONES%%
 // "KE" -> 🇰🇪 (two regional indicator letters)
 const flag = cc => cc ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1A5 + c.charCodeAt(0))) : "🌐";
 const region = cc => { try { return new Intl.DisplayNames(["en"], { type: "region" }).of(cc); } catch (e) { return cc; } };
-// how far ahead (+) or behind (−) a time zone is from here, e.g. "−7h", "+5h 30m", "same time"
-// your own country's exchange, shown under the flag on your clock
-const LOCAL_EX = { KE: { ex: "NSE", tz: "Africa/Nairobi", open: 540, close: 900 } };
-// Hover an exchange to put its city's clock on the big display; leaving the panel (or 8 s idle) brings yours back,
-// like Tech Markets and Weather.
+// Hover a city to put its clock on the big display; leaving the panel (or 8 s idle) brings yours back, like Weather.
 const pick = (root, k) => { if (!root) return;
   root.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.dataset.k === k));
   root.querySelectorAll(".cell").forEach(v => v.classList.toggle("sel", v.dataset.k === k)); };
 const home = e => { const el = e.currentTarget; clearTimeout(window.__ckHome); window.__ckHome = setTimeout(() => pick(el, "here"), 8000); };
-const offset = (tz, now) => { const at = z => new Date(now.toLocaleString("en-US", z ? { timeZone: z } : {}));
-  const m = Math.round((at(tz) - at()) / 60000 / 15) * 15; if (!m) return "same time as you";
-  const a = Math.abs(m); return (m > 0 ? "+" : "−") + Math.floor(a / 60) + "h" + (a % 60 ? " " + a % 60 + "m" : "") + (m > 0 ? " ahead" : " behind"); };
+// how far ahead (+) or behind (−) a time zone is from here, e.g. "−7h", "+5h 30m"
+const diff = (tz, now) => { const at = z => new Date(now.toLocaleString("en-US", z ? { timeZone: z } : {}));
+  const m = Math.round((at(tz) - at()) / 60000 / 15) * 15; if (!m) return "";
+  const a = Math.abs(m); return (m > 0 ? "+" : "−") + Math.floor(a / 60) + "h" + (a % 60 ? " " + a % 60 + "m" : ""); };
+const offset = (tz, now) => { const d = diff(tz, now); return !d ? "same time as you" : d + (d[0] === "+" ? " ahead" : " behind"); };
+const partOf = h => h < 5 ? ["night", "☾"] : h < 12 ? ["morning", "☀︎"] : h < 17 ? ["afternoon", "☀︎"] : h < 21 ? ["evening", "☾"] : ["night", "☾"];
 export const render = () => {
   const now = new Date(), h = now.getHours();
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone, cc = ZONES[tz], city = (tz.split("/").pop() || "").replace(/_/g, " ");
-  const part = h < 12 ? "morning" : h < 17 ? "afternoon" : "evening";
   return (
     <div onMouseLeave={e => pick(e.currentTarget, "here")} onMouseMove={home}>
       <div className="stage">
         <div className="view on" data-k="here">
-          <div className="here" title={city}><div className="f">{flag(cc)}</div><div className="n">{(cc ? region(cc) : city).toUpperCase()}</div>
-            {LOCAL_EX[cc] && (s => <div className={"nse " + (s.open ? "up" : "muted")}>
-              <span className="dot" style={{ background: s.open ? "#4ade80" : "#6f665f", boxShadow: s.open ? "0 0 6px #4ade80" : "none" }} />
-              <b>{LOCAL_EX[cc].ex}</b> {s.open ? "OPEN" : "CLOSED"}<br />{s.open ? `closes ${s.dur}` : `opens ${s.dur}`}</div>)(session(LOCAL_EX[cc], now))}</div>
+          <div className="here" title={city}><div className="f">{flag(cc)}</div><div className="n">{(cc ? region(cc) : city).toUpperCase()}</div></div>
           <div className="time num"><b>{now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</b>
             <span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
           <div className="date">{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
-          <div className="greet">Good {part}, Anthony</div>
+          <div className="greet">Good {partOf(h)[0] === "night" ? "evening" : partOf(h)[0]}, Anthony</div>
         </div>
-        {EXCHANGES.map(ex => { const s = session(ex, now); return (
-          <div className="view" data-k={ex.city} key={ex.city}>
-            <div className="here"><div className="f">{flag(ex.cc)}</div><div className="n">{ex.city}</div></div>
-            <div className="time num"><b>{s.hm}</b><span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
-            <div className="date">{now.toLocaleDateString("en-GB", { timeZone: ex.tz, weekday: "long", day: "numeric", month: "long" })}
-              <span className="muted"> · {offset(ex.tz, now)}</span></div>
-            <div className="info"><span className="dot" style={{ background: s.open ? "#4ade80" : "#6f665f", boxShadow: s.open ? "0 0 6px #4ade80" : "none" }} />
-              <b style={{ color: s.open ? "#4ade80" : "#e6dcd2" }}>{ex.ex}</b> {s.open ? `open · closes in ${s.dur}` : `closed · opens in ${s.dur}`}</div>
+        {CITIES.map(c => { const t = localParts(c.tz, now); return (
+          <div className="view" data-k={c.city} key={c.city}>
+            <div className="here"><div className="f">{flag(c.cc)}</div><div className="n">{c.city}</div></div>
+            <div className="time num"><b>{t.hm}</b><span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
+            <div className="date">{now.toLocaleDateString("en-GB", { timeZone: c.tz, weekday: "long", day: "numeric", month: "long" })}</div>
+            <div className="greet">{partOf(t.h)[1]} {partOf(t.h)[0]} there · {offset(c.tz, now)}</div>
           </div>); })}
       </div>
       <div className="ex">
-        {EXCHANGES.map(ex => { const s = session(ex, now); return (
-          <div className="cell" key={ex.city} data-k={ex.city} onMouseEnter={e => pick(e.currentTarget.closest(".ex").parentElement, ex.city)}>
-            <div className="c">{flag(ex.cc)} {ex.city}</div>
-            <div className="t num">{s.hm}</div>
-            <div className={"s " + (s.open ? "up" : "muted")}>
-              <span className="dot" style={{ background: s.open ? "#4ade80" : "#6f665f", boxShadow: s.open ? "0 0 6px #4ade80" : "none" }} />
-              {s.open ? `closes ${s.dur}` : `opens ${s.dur}`}</div>
+        {CITIES.map(c => { const t = localParts(c.tz, now); return (
+          <div className="cell" key={c.city} data-k={c.city} onMouseEnter={e => pick(e.currentTarget.closest(".ex").parentElement, c.city)}>
+            <div className="c">{flag(c.cc)} {c.city}</div>
+            <div className="t num">{t.hm}</div>
+            <div className="s num">{partOf(t.h)[1]} {diff(c.tz, now) || "same time"}</div>
           </div>); })}
       </div>
     </div>
@@ -468,23 +438,23 @@ export const className = `
   .stage { display:grid }
   .view { grid-area: 1 / 1; opacity:0; visibility:hidden; transition: opacity .25s, visibility .25s }
   .view.on { opacity:1; visibility:visible }
-  .main { display:flex; align-items:center; gap:14px; padding:10px 18px 4px }
+  .main { display:flex; align-items:center; gap:16px; padding:16px 22px 10px }
   .temp .lo { font-size:24px; color:#8c8178; margin-left:4px; letter-spacing:0 }
   .cond .when { font-size:9.5px; letter-spacing:.16em; color:#f5b14c; font-weight:600 }
-  .ico { font-size:44px; line-height:1; filter: drop-shadow(0 4px 12px rgba(255,179,92,.35)) }
-  .temp { font: 200 50px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.02em; line-height:1; color:#ffffff }
+  .ico { font-size:54px; line-height:1; filter: drop-shadow(0 4px 12px rgba(255,179,92,.35)) }
+  .temp { font: 200 60px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.02em; line-height:1; color:#ffffff }
   .temp sup { font-size:18px; color:#ffb35c; vertical-align: 20px; margin-left:2px }
   .cond { margin-left:auto; text-align:right }
-  .cond b { display:block; font-size:15px; font-weight:600 }
-  .cond span { display:block; font-size:11px; color:#a39a92; line-height:1.5 }
-  .chips { display:flex; gap:6px; padding:4px 16px 10px }
-  .chip { flex:1; text-align:center; font-size:10.5px; padding:5px 0; border-radius:10px; background:rgba(255,214,170,.04); border:1px solid rgba(255,214,170,.06); color:#d9cfc6; white-space:nowrap }
-  .days { display:grid; grid-template-columns: repeat(5, 1fr); margin:0 12px; padding-top:5px; border-top:1px solid rgba(255,214,170,.08); text-align:center }
-  .d { border-radius:10px; padding:2px 0 3px; cursor:pointer; transition: background .25s, box-shadow .25s }
+  .cond b { display:block; font-size:17px; font-weight:600 }
+  .cond span { display:block; font-size:12px; color:#a39a92; line-height:1.5 }
+  .chips { display:flex; gap:8px; padding:6px 20px 16px }
+  .chip { flex:1; text-align:center; font-size:11.5px; padding:7px 0; border-radius:10px; background:rgba(255,214,170,.04); border:1px solid rgba(255,214,170,.06); color:#d9cfc6; white-space:nowrap }
+  .days { display:grid; grid-template-columns: repeat(5, 1fr); gap:6px; margin:6px 16px 0; padding-top:18px; border-top:1px solid rgba(255,214,170,.08); text-align:center }
+  .d { border-radius:10px; padding:10px 0 12px; cursor:pointer; transition: background .25s, box-shadow .25s }
   .d:hover, .d.sel { background:rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px rgba(245,177,76,.3) }
   .d .n { font-size:9.5px; letter-spacing:.14em; color:#8c8178; font-weight:600 }
-  .d .i { font-size:17px; margin:2px 0 1px }
-  .d .hl { font-size:11px } .d .hl span { color:#6f665f }
+  .d .i { font-size:24px; margin:8px 0 5px }
+  .d .hl { font-size:12px } .d .hl span { color:#6f665f }
   .bar { height:3px; margin:5px 12px 0; border-radius:2px; background:rgba(127,220,255,.12); overflow:hidden }
   .bar i { display:block; height:100%; background:#7fdcff }
 `;
@@ -564,13 +534,18 @@ export const command = "~/.stark/system.sh";
 export const refreshFrequency = 10 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  .rings { display:grid; grid-template-columns: repeat(5, 1fr); padding:16px 8px 8px; text-align:center }
-  .ring { position:relative; width:56px; height:56px; margin:0 auto }
-  .ring b { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:500 }
+  .rings { display:grid; grid-template-columns: repeat(5, 1fr); padding:26px 10px 10px; text-align:center }
+  .ring { position:relative; width:64px; height:64px; margin:0 auto }
+  .ring svg { width:64px; height:64px }
+  .ring b { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:14.5px; font-weight:500 }
   .ring b small { font-size:8.5px; color:#8c8178; margin-left:1px }
   .rl { margin-top:7px; letter-spacing:.18em }
   .rs { margin-top:3px; font-size:9.5px; color:#a39a92; white-space:nowrap }
-  .foot { display:flex; justify-content:space-between; margin:6px 16px 0; padding-top:10px; border-top:1px solid rgba(255,214,170,.08); font-size:10.5px; color:#a39a92 }
+  .load { margin:20px 20px 0 }
+  .load .top { display:flex; justify-content:space-between; font-size:10.5px; color:#a39a92 } .load .top b { color:#e6dcd2; font-weight:500 }
+  .load .bar { height:5px; margin-top:6px; border-radius:3px; background:rgba(255,214,170,.08); overflow:hidden }
+  .load .bar i { display:block; height:100%; border-radius:3px; transition: width .6s ease }
+  .foot { display:flex; justify-content:space-between; margin:20px 20px 0; padding-top:14px; border-top:1px solid rgba(255,214,170,.08); font-size:10.5px; color:#a39a92 }
   .foot b { color:#e6dcd2; font-weight:500 }
 `;
 const Ring = ({ v, col, label, sub, title }) => {
@@ -617,6 +592,8 @@ export const render = ({ output }) => {
         <Ring v={s.batt} col={s.batt < 20 ? "#f87171" : "#4ade80"} label={s.charging ? "⚡ POWER" : "BATTERY"} />
         <Health s={s} />
       </div>}
+      {s && <div className="load num"><div className="top"><span>Combined load</span><b>{load}%</b></div>
+        <div className="bar"><i style={{ width: load + "%", background: load > 85 ? "#f87171" : load > 65 ? "#ffb35c" : "#4ade80" }} /></div></div>}
       {s && <div className="foot num"><span>Uptime <b>{s.uptime}</b></span><span>Processes <b>{s.procs}</b></span><span>Free <b>{s.diskFree}</b></span></div>}
     </div>
   );
@@ -631,7 +608,7 @@ export const command = "~/.stark/network.sh";
 export const refreshFrequency = 30 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  .body { display:flex; align-items:center; padding:4px 10px 0 6px }
+  .body { display:flex; align-items:center; padding:8px 18px 0 14px }
   .flow { stroke-dasharray: 3 5; animation: f 1.2s linear infinite } @keyframes f { to { stroke-dashoffset: -16 } }
   .pulse { animation: p 2.4s ease-in-out infinite } @keyframes p { 50% { opacity:.45 } }
   .wave { transform-box: fill-box; transform-origin: center; animation: wave 2.6s ease-out infinite }
@@ -660,7 +637,7 @@ export const className = `
   .node.pinged .dot { animation: pinged .6s ease-out } @keyframes pinged { 0% { transform: scale(2.6) } 100% { transform: scale(1) } }
   .ln.taut { stroke-dasharray: 2 4; stroke-width: 1.6 }
   .rates { margin-left:auto; text-align:right; padding-right:8px }
-  .rate { font: 200 25px -apple-system, sans-serif; line-height:1.15 } .rate small { font-size:10px; color:#8c8178; margin-left:3px }
+  .rate { font: 200 28px -apple-system, sans-serif; line-height:1.15 } .rate small { font-size:10px; color:#8c8178; margin-left:3px }
   .rl { font-size:9.5px; letter-spacing:.16em; color:#8c8178; font-weight:600; margin-top:8px }
   .lip { font-size:9.5px; color:#6f665f; margin-top:9px; letter-spacing:.04em }
   .seg { display:inline-flex; gap:2px; padding:2px; border-radius:7px; background:rgba(0,0,0,.18); vertical-align:middle }
@@ -668,7 +645,7 @@ export const className = `
   .seg span:hover { color:#e6dcd2 } .seg .on { background:rgba(255,255,255,.08); color:#fff7ee }
   .vpn { font-size:8.5px; font-weight:700; letter-spacing:.1em; padding:2px 6px; border-radius:5px; margin-right:6px; vertical-align:middle;
          color:#4ade80; background:rgba(74,222,128,.12) }
-  .link { padding:2px 20px 0 }
+  .link { padding:4px 22px 0 }
   .row { display:grid; grid-template-columns: 50px 1fr auto; align-items:baseline; padding:6px 0 7px; border-top:1px solid rgba(255,255,255,.05) }
   .row:first-child { border-top:none }
   .k { font-size:9px; font-weight:700; letter-spacing:.14em; color:#8c8178 }
@@ -792,7 +769,7 @@ const Live = ({ n }) => {
   const [dv, du] = n ? rate(n.down) : ["—", ""], [uv, uu] = n ? rate(n.up) : ["—", ""];
   return (
     <div className="body">
-      <svg className="live" width="200" height="140" viewBox="0 0 200 140" style={{ overflow: "visible" }}>
+      <svg className="live" width="236" height="165" viewBox="0 0 200 140" style={{ overflow: "visible" }}>
         <defs><linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
           <stop offset="0" stopColor="#fff1b0" /><stop offset=".35" stopColor="#ffb340" /><stop offset=".7" stopColor="#ff5a24" /><stop offset="1" stopColor="#d9261c" stopOpacity="0" />
         </linearGradient></defs>
@@ -888,185 +865,6 @@ export const render = ({ output, view, speed: mine, testing: busy, vpnBusy }, di
   );
 };''')
 
-# ───────────────────────── MARKETS ─────────────────────────
-widget("markets", r'''// NSE market: the Nairobi All-Share index (NASI) over 3 months + Kenya's blue chips, from ~/.stark/nse.py market (edit BLUE there).
-// MY NSE (toggle in the header, remembered): your Nairobi Securities Exchange portfolio from ~/.stark/nse.py (holdings in the
-// private ~/.stark/portfolio.json): total value over 3 months, a tile per holding (click to change shares) and + ADD.
-import { run } from "uebersicht";
-export const command = "%%PY%% ~/.stark/nse.py market";
-export const refreshFrequency = 5 * 60 * 1000;
-const savedView = () => { try { return localStorage.getItem("mk-view") === "NSE" ? "NSE" : "MKT"; } catch (e) { return "MKT"; } };
-export const initialState = { output: "", view: savedView(), pf: window.__pf || null };
-export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: ev.view } : ev.type === "PF" ? { ...prev, pf: ev.pf }
-  : { ...prev, output: ev.output, error: ev.error };
-export const className = `
-  %%POS%%%%SHARED%%
-  /* the centrepiece: lighter glass, deeper shadow, full amber edge — the side panels sit back */
-  background:
-    radial-gradient(320px circle at var(--mx, -999px) var(--my, -999px), rgba(255,236,210,.09), transparent 70%),
-    linear-gradient(180deg, rgba(255,255,255,.085), rgba(255,255,255,.015) 42%),
-    rgba(30,25,21,.80);
-  border-color: rgba(245,177,76,.17);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), 0 0 0 1px rgba(0,0,0,.35), 0 34px 90px rgba(0,0,0,.7);
-  &:hover { border-color: rgba(245,177,76,.28) }
-  &::before { left:0; right:0; height:1.5px; background: linear-gradient(90deg, transparent, rgba(245,177,76,.95) 25%, rgba(245,177,76,.95) 75%, transparent) }
-  h1 { color: rgba(242,237,230,.86) }
-  .pill { margin-left:10px; font-size:10px; letter-spacing:.1em; padding:3px 9px; border-radius:20px; font-weight:600 }
-  .stage { display:grid }
-  .hero { grid-area: 1 / 1; padding:14px 18px 0; cursor:pointer; opacity:0; visibility:hidden; transition: opacity .25s, visibility .25s }
-  .hero.on { opacity:1; visibility:visible }
-  .hrow { display:flex; align-items:flex-end; gap:12px }
-  .hname { font-size:10px; letter-spacing:.2em; color:#8c8178; font-weight:600 }
-  .hname b { color:#f5b14c; font-weight:700 }
-  .hp { font: 400 46px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.025em; line-height:1.05; color:#ffffff }
-  .hc { font-size:14px; font-weight:700; padding:4px 11px; border-radius:20px; margin-bottom:8px }
-  .hc.up { background:rgba(74,222,128,.15); box-shadow: inset 0 0 0 1px rgba(74,222,128,.25) }
-  .hc.dn { background:rgba(248,113,113,.15); box-shadow: inset 0 0 0 1px rgba(248,113,113,.25) }
-  .range { margin-left:auto; text-align:right; font-size:10.5px; color:#a39a92; line-height:1.6; padding-bottom:4px }
-  .range b { color:#e6dcd2; font-weight:500 }
-  .chart { margin-top:6px }
-  .pulse { transform-box: fill-box; transform-origin: center; animation: pulse 2.6s ease-out infinite }
-  @keyframes pulse { 0% { transform: scale(.5); opacity:.6 } 100% { transform: scale(2.1); opacity:0 } }
-  .draw { stroke-dasharray:1; stroke-dashoffset:1; animation: draw 1.4s cubic-bezier(.3,.7,.3,1) forwards }
-  @keyframes draw { to { stroke-dashoffset:0 } }
-  .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; padding:10px 16px 0 }
-  .tile { background:rgba(255,214,170,.04); border:1px solid rgba(255,214,170,.06); border-radius:14px; padding:9px 12px 9px 14px; cursor:pointer; transition: all .25s; position:relative; overflow:hidden }
-  .tile::before { content:""; position:absolute; left:0; top:10px; bottom:10px; width:2.5px; border-radius:0 3px 3px 0 }
-  .tile.tu::before { background:#4ade80 } .tile.td::before { background:#f87171 }
-  .tile:hover, .tile.sel { background:rgba(255,255,255,.075); border-color: rgba(245,177,76,.35) }
-  .tile .top { display:flex; justify-content:space-between; align-items:center }
-  .tile .s { font-size:11px; font-weight:700; letter-spacing:.06em; color:#e6dcd2 }
-  .tile .c { font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:10px }
-  .tile .c.up { background:rgba(74,222,128,.14) } .tile .c.dn { background:rgba(248,113,113,.14) }
-  .tile .p { font-size:19px; font-weight:500; margin:1px 0 3px; color:#ffffff; border-radius:5px }
-  .tile .p.flu { animation: flu 1.6s ease-out } .tile .p.fld { animation: fld 1.6s ease-out }
-  @keyframes flu { 0%, 25% { color:#4ade80; background:rgba(74,222,128,.22) } 100% { background:rgba(74,222,128,0) } }
-  @keyframes fld { 0%, 25% { color:#f87171; background:rgba(248,113,113,.22) } 100% { background:rgba(248,113,113,0) } }
-  .rk { font-style:normal; color:#ffb35c; font-size:9.5px; font-weight:700; margin-right:5px }
-  .seg { display:inline-flex; gap:2px; padding:2px; border-radius:7px; background:rgba(0,0,0,.18); vertical-align:middle; margin-left:10px }
-  .seg span { padding:2px 7px; border-radius:5px; font-size:8.5px; font-weight:700; letter-spacing:.12em; color:#8c8178; cursor:pointer }
-  .seg span:hover { color:#e6dcd2 } .seg .on { background:rgba(255,255,255,.08); color:#fff7ee }
-  .hp small { font-size:20px; color:#8c8178; margin-right:6px; letter-spacing:0 }
-  .add { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; color:#8c8178; border-style:dashed }
-  .add b { font-size:22px; font-weight:300; color:#f5b14c; line-height:1; transition: transform .2s } .add span { font-size:9.5px; letter-spacing:.14em; font-weight:700 }
-  .add:hover b { transform: scale(1.15) }
-  .tcap { float:right; font-size:9px; color:#6f665f; font-weight:500; margin-top:8px }
-  .lg { width:15px; height:15px; border-radius:4px; background:#fff; padding:1.5px; object-fit:contain; vertical-align:middle; margin:-2px 6px 0 0; box-shadow: 0 0 0 1px rgba(0,0,0,.25) }
-  .lg.big { width:17px; height:17px; border-radius:5px; margin:-3px 7px 0 0 }
-`;
-%%FMT%%
-%%SPARK%%
-// Hover a tile to put its 3-month chart on the big stage; leaving the panel (or 8 s idle) brings the index back.
-const pick = (root, sym) => {
-  if (!root) return;
-  root.querySelectorAll(".hero").forEach(h => h.classList.toggle("on", h.dataset.sym === sym));
-  root.querySelectorAll(".tile").forEach(t => t.classList.toggle("sel", t.dataset.sym === sym));
-};
-// Leaving into a gap between panels sends no mouseleave (Übersicht passes those clicks through to the desktop),
-// so the stage also falls back to the index 8 s after the mouse last moved over the panel.
-const home = e => { const el = e.currentTarget; clearTimeout(window.__mkHome); window.__mkHome = setTimeout(() => pick(el, el.dataset.home || "NASI"), 8000); };
-const afx = s => run(`open "https://afx.kwayisi.org/nse/${s === "NASI" ? "" : s.toLowerCase() + ".html"}"`);
-const vol = v => v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? Math.round(v / 1e3) + "K" : String(v || 0);
-// ── MY NSE ──
-const kes = (v, sign) => (sign && v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const nseOpen = () => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "Africa/Nairobi", hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit" })
-  .formatToParts(new Date()).map(x => [x.type, x.value])); const m = (+p.hour % 24) * 60 + +p.minute;
-  return p.weekday !== "Sat" && p.weekday !== "Sun" && m >= 540 && m < 900; };
-// prices refresh with the panel (every 5 min) while MY NSE is showing; editing runs nse.py's macOS dialogs, then redraws
-const loadPf = (dispatch, args = "", force = false) => {
-  if (!force && (window.__pfBusy || Date.now() - (window.__pfAt || 0) < 4 * 60000)) return; window.__pfBusy = true;
-  run(`%%PY%% ~/.stark/nse.py ${args}`).then(out => { let pf = null; try { pf = JSON.parse(out); } catch (e) {}
-    window.__pfBusy = false; if (pf && !pf.error) { window.__pf = pf; window.__pfAt = Date.now(); } dispatch({ type: "PF", pf: pf || window.__pf }); })
-    .catch(() => { window.__pfBusy = false; }); };
-const PfHero = ({ label, big, ch, right, d, ts, on, k, go }) => (
-  <div className={"hero" + (on ? " on" : "")} data-sym={k} onClick={go}>
-    <div className="hname">{label}</div>
-    <div className="hrow">
-      <div className="hp num">{big}</div>
-      <div className={"hc num " + (ch >= 0 ? "up" : "dn")}>{pct(ch)}</div>
-      <div className="range num">{right}</div>
-    </div>
-    <div className="chart"><Spark d={d} ts={ts} base={d && d[0]} w={650} h={200} sw={2.2} fillOp={.45} axis daily /></div>
-  </div>);
-const Nse = ({ pf, dispatch }) => {
-  if (!pf) return <div className="hero on muted">Loading your NSE portfolio…</div>;
-  if (pf.error) return <div className="hero on muted">NSE prices unavailable right now.</div>;
-  const t = pf.total, hs = pf.holdings || [], edit = sym => loadPf(dispatch, sym ? "edit " + sym : "add", true);
-  const show = hs.length > 5 ? hs.slice(0, 5) : hs, more = hs.length - show.length;
-  return (
-    <div data-home="PF" onMouseLeave={e => pick(e.currentTarget, "PF")} onMouseMove={home}>
-      <div className="stage">
-        {t ? <PfHero k="PF" on label={<span><Logo s="NSE" big /><b>MY NSE PORTFOLIO</b> · {hs.length} STOCK{hs.length === 1 ? "" : "S"} · 3 MONTHS</span>}
-          big={<span><small>KES</small>{kes(t.value)}</span>} ch={t.pct} d={t.hist} ts={t.ts}
-          right={<span>Today <b className={t.day >= 0 ? "up" : "dn"}>{kes(t.day, 1)}</b><br />
-            {t.paid ? <span>Total gain <b className={t.value >= t.paid ? "up" : "dn"}>{kes(t.value - t.paid, 1)}</b></span> : <span>Prices {pf.asof || "delayed"}</span>}</span>} />
-          : <div className="hero on muted" data-sym="PF">No holdings yet. Click + ADD to put in your first stock.</div>}
-        {/* hovering a holding: the big number is what you have in it, and the chart is your stake's value over time */}
-        {hs.map(x => <PfHero key={x.sym} k={x.sym} label={<span><Logo s={x.sym} big /><b>MY {x.sym}</b> · {x.name} · {t && t.value ? Math.round(x.value / t.value * 100) : 100}% OF PORTFOLIO</span>}
-          big={<span><small>KES</small>{kes(x.value)}</span>} ch={x.pct} d={x.hist.map(v => v * x.shares)} ts={x.ts}
-          right={<span>{x.shares} shares × <b>{kes(x.p)}</b><br />Today <b className={x.day >= 0 ? "up" : "dn"}>{kes(x.day, 1)}</b>
-            {x.cost ? <span><br />Gain <b className={x.p >= x.cost ? "up" : "dn"}>{kes((x.p - x.cost) * x.shares, 1)}</b></span> : null}</span>} />)}
-      </div>
-      <div className="grid">
-        {show.map(x => (
-          <div className={"tile " + (x.ch >= 0 ? "tu" : "td")} key={x.sym} data-sym={x.sym} onClick={() => edit(x.sym)} title="Click to change shares"
-            onMouseEnter={e => pick(e.currentTarget.closest(".grid").parentElement, x.sym)}>
-            <div className="top"><span className="s"><Logo s={x.sym} />{x.sym}</span><span className={"c num " + (x.ch >= 0 ? "up" : "dn")}>{pct(x.pct)}</span></div>
-            <div className="p num">{kes(x.p)}<span className="tcap">{x.shares} sh · {Math.round(x.value).toLocaleString("en-US")}</span></div>
-            <Spark d={x.hist.slice(-22)} base={x.hist[Math.max(0, x.hist.length - 22)]} w={186} h={34} fillOp={.34} />
-          </div>))}
-        <div className="tile add" onClick={() => edit()} title="Add a stock you bought">
-          <b>+</b><span>{more ? `ADD · ${more} MORE HELD` : "ADD STOCK"}</span></div>
-      </div>
-    </div>); };
-// ── NSE MARKET ──
-const Market = ({ m }) => {
-  const n = m.nasi, xs = m.stocks || [], g = (m.gainers || [])[0], l = (m.losers || [])[0];
-  // flash a price (and redraw its sparkline) when it moved since the last refresh
-  const was = window.__mkPrev || {}; window.__mkPrev = Object.fromEntries(xs.map(x => [x.sym, x.p]));
-  const moved = x => was[x.sym] == null || was[x.sym] === x.p ? "" : x.p > was[x.sym] ? "flu" : "fld";
-  return (
-    <div data-home="NASI" onMouseLeave={e => pick(e.currentTarget, "NASI")} onMouseMove={home}>
-      <div className="stage">
-        {n ? <PfHero k="NASI" on go={() => afx("NASI")} label={<span><Logo s="NSE" big /><b>NSE ALL-SHARE (NASI)</b> · 3 MONTHS</span>}
-          big={n.p.toFixed(2)} ch={n.pct} d={n.hist} ts={n.ts}
-          right={<span>{n.ytd != null && <span>Year to date <b className={n.ytd >= 0 ? "up" : "dn"}>{pct(n.ytd)}</b><br /></span>}
-            Today <b className="up">{m.up}▲</b> <b className="dn">{m.down}▼</b>{n.cap ? " · " + n.cap : ""}<br />
-            {g && <span>Top <b className="up">{g.sym} {pct(g.pct)}</b></span>}{l && <span> · <b className="dn">{l.sym} {pct(l.pct)}</b></span>}</span>} />
-          : <div className="hero on muted" data-sym="NASI">Index chart unavailable right now.</div>}
-        {xs.map(x => <PfHero key={x.sym} k={x.sym} go={() => afx(x.sym)} label={<span><Logo s={x.sym} big /><b>{x.sym}</b> · {x.name} · 3 MONTHS</span>}
-          big={<span><small>KES</small>{kes(x.p)}</span>} ch={x.pct} d={x.hist} ts={x.ts}
-          right={<span>Today <b className={x.ch >= 0 ? "up" : "dn"}>{kes(x.ch, 1)}</b><br />Volume <b>{vol(x.vol)}</b>
-            {x.own ? <span><br /><b style={{ color: "#f5b14c" }}>IN YOUR PORTFOLIO</b></span> : null}</span>} />)}
-      </div>
-      <div className="grid">
-        {xs.map(x => (
-          <div className={"tile " + (x.ch >= 0 ? "tu" : "td")} key={x.sym} data-sym={x.sym} onClick={() => afx(x.sym)}
-            onMouseEnter={e => pick(e.currentTarget.closest(".grid").parentElement, x.sym)}>
-            <div className="top"><span className="s"><Logo s={x.sym} />{x.sym}</span><span className={"c num " + (x.ch >= 0 ? "up" : "dn")}>{pct(x.pct)}</span></div>
-            <div className={"p num " + moved(x)}>{kes(x.p)}<span className="tcap">{x.own ? <b style={{ color: "#f5b14c" }}>● OWNED</b> : "VOL " + vol(x.vol)}</span></div>
-            <Spark d={x.hist.slice(-22)} base={x.hist[Math.max(0, x.hist.length - 22)]} w={186} h={34} fillOp={.34} draw={!!moved(x)} />
-          </div>))}
-      </div>
-    </div>); };
-export const render = ({ output, view, pf }, dispatch) => {
-  if (view === "NSE") loadPf(dispatch);
-  const setView = v => { try { localStorage.setItem("mk-view", v); } catch (e) {} dispatch({ type: "VIEW", view: v }); if (v === "NSE") loadPf(dispatch); };
-  let m = null; try { m = JSON.parse(output); } catch (e) {}
-  return (
-    <div>
-      <header><span style={{ color: "#4ade80" }}>↗</span><h1>{view === "NSE" ? "MY NSE" : "NSE MARKET"}</h1>
-        <span className="sub">AFX · DELAYED</span>
-        {(o => <span className="pill" style={{ color: o ? "#4ade80" : "#ffb35c", background: o ? "rgba(74,222,128,.1)" : "rgba(255,179,92,.1)" }}>
-          ● NSE {o ? "OPEN" : "CLOSED"}</span>)(nseOpen())}
-        <span className="seg">{[["MKT", "MARKET"], ["NSE", "MY NSE"]].map(([v, l]) => <span key={v} className={view === v ? "on" : ""} onClick={() => setView(v)}>{l}</span>)}</span></header>
-      {view === "NSE" ? <Nse pf={pf} dispatch={dispatch} />
-        : !m ? <div className="hero on muted">Connecting to the NSE…</div>
-        : m.error ? <div className="hero on muted">NSE prices unavailable right now.</div> : <Market m={m} />}
-    </div>
-  );
-};''')
-
 # ───────────────────────── BATCAVE ─────────────────────────
 widget("batcave", r'''// Batcave: git projects (click to open in VS Code) + your own 12-week commit activity (see batcave.sh).
 import { run } from "uebersicht";
@@ -1074,13 +872,13 @@ export const command = "~/.stark/batcave.sh";
 export const refreshFrequency = 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  .list { padding:6px 8px 0 }
-  .row { display:grid; grid-template-columns: 10px 1fr auto 30px; align-items:center; gap:9px; height:33px; padding:0 9px; border-radius:8px; cursor:pointer }
+  .list { padding:8px 10px 0 }
+  .row { display:grid; grid-template-columns: 10px 1fr auto 30px; align-items:center; gap:10px; height:36px; padding:0 9px; border-radius:8px; cursor:pointer }
   .row:hover { background:rgba(255,179,92,.08) } .row:hover .name { color:#ffb35c }
   .dot { width:7px; height:7px; border-radius:50% }
   .name { font-weight:600; font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .name i { font-style:normal; color:#ffb35c; font-size:10px; margin-left:6px; font-weight:500 }
-  .br { font:10px "SF Mono", Menlo, monospace; color:#d9b48a; background:rgba(255,179,92,.07); border:1px solid rgba(255,179,92,.14); border-radius:5px; padding:1px 6px; max-width:96px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .br { font:10px "SF Mono", Menlo, monospace; color:#d9b48a; background:rgba(255,179,92,.07); border:1px solid rgba(255,179,92,.14); border-radius:5px; padding:1px 6px; max-width:130px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .ago { text-align:right; color:#6f665f; font-size:10.5px }
   .act { display:flex; gap:16px; margin:10px 16px 0; padding-top:12px; border-top:1px solid rgba(255,214,170,.08) }
   .hm { display:grid; grid-template-rows: repeat(7, 13px); grid-auto-flow: column; grid-auto-columns: 13px; gap:3px; margin-top:8px }
@@ -1127,19 +925,19 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── AI & TECH WIRE ─────────────────────────
-widget("ai-wire", r'''// Top 5 tech stories ranked for a software engineer in the job market (relevance x freshness, see market.py);
+widget("ai-wire", r'''// Top 7 tech stories ranked for a software engineer in the job market (relevance x freshness, see market.py);
 // layoff news is flagged red and pinned. Click to open.
 import { run } from "uebersicht";
 export const command = "%%PY%% ~/.stark/market.py json tech";
 export const refreshFrequency = 15 * 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  .list { padding:6px 8px }
-  .row { display:flex; align-items:center; gap:10px; height:46px; padding:0 10px; border-radius:8px; cursor:pointer }
+  .list { padding:6px 10px }
+  .row { display:flex; align-items:center; gap:12px; height:51px; padding:0 12px; border-radius:8px; cursor:pointer }
   .row:hover { background:rgba(127,220,255,.07) } .row:hover .t { color:#fff }
   .tag { flex:none; width:54px; text-align:center; font-size:8.5px; font-weight:800; letter-spacing:.08em; padding:2px 0; border-radius:4px }
   .src { flex:none; width:86px; white-space:nowrap; font-size:9px; font-weight:700; letter-spacing:.08em; color:#8c8178 }
-  .t { flex:1; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:#e6dcd2; font-size:12.5px; line-height:1.35 }
+  .t { flex:1; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:#e6dcd2; font-size:13px; line-height:1.38 }
   .a { flex:none; width:30px; text-align:right; font-size:10.5px; color:#6f665f }
   /* layoff / job-cut headlines: pure red warning row, pinned to the top */
   .row.alert { background:rgba(255,59,48,.16); box-shadow: inset 3px 0 0 #ff3b30; animation: alertGlow 2.6s ease-in-out infinite }
@@ -1158,9 +956,9 @@ export const render = ({ output }) => {
   const TAGS = { JOBS: "#ffb35c", AI: "#7fdcff", DEV: "#c4a1ff", "BIG TECH": "#e6dcd2", STARTUPS: "#4ade80", TECH: "#8c8178" };
   return (
     <div>
-      <header><span style={{ color: "#7fdcff" }}>✦</span><h1>AI &amp; TECH WIRE</h1><span className="sub">{alerts > 0 && <span className="alertsub">⚠ {alerts} LAYOFF ALERT{alerts > 1 ? "S" : ""}</span>}TOP 5 · <b style={{ color: "#7fdcff" }}>RANKED FOR SOFTWARE ENGINEERS</b></span></header>
+      <header><span style={{ color: "#7fdcff" }}>✦</span><h1>AI &amp; TECH WIRE</h1><span className="sub">{alerts > 0 && <span className="alertsub">⚠ {alerts} LAYOFF ALERT{alerts > 1 ? "S" : ""}</span>}TOP 7 · <b style={{ color: "#7fdcff" }}>RANKED FOR SOFTWARE ENGINEERS</b></span></header>
       <div className="list">
-        {n.slice(0, 5).map(h => (
+        {n.slice(0, 7).map(h => (
           <div className={"row" + (h.alert ? " alert" : "")} key={h.l} onClick={() => run(`open "${h.l}"`)}>
             {h.alert ? <span className="tag">⚠ LAYOFFS</span>
               : <span className="tag" style={{ color: TAGS[h.tag] || "#8c8178", background: "rgba(255,255,255,.05)" }}>{h.tag || "TECH"}</span>}
@@ -1179,17 +977,17 @@ export const command = "%%PY%% ~/.stark/jobs.py";
 export const refreshFrequency = 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  .stats { display:grid; grid-template-columns: repeat(4, 1fr); gap:6px; margin:0 14px 4px }
-  .st { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:10px; padding:5px 9px }
-  .st .v { font: 300 19px -apple-system, "SF Pro Display", sans-serif; line-height:1.15; color:#ffffff }
+  .stats { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin:4px 18px 8px }
+  .st { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:8px 12px }
+  .st .v { font: 300 24px -apple-system, "SF Pro Display", sans-serif; line-height:1.15; color:#ffffff }
   .st .v small { font-size:11px; color:#8c8178; margin-left:1px }
-  .list { padding:0 8px }
-  .grp { display:flex; align-items:center; gap:8px; padding:6px 9px 2px; font-size:9px; font-weight:700; letter-spacing:.14em }
+  .list { padding:0 10px }
+  .grp { display:flex; align-items:center; gap:8px; padding:8px 10px 3px; font-size:9px; font-weight:700; letter-spacing:.14em }
   .grp i { flex:1; height:1px; background:rgba(255,255,255,.06) }
-  .row { display:grid; grid-template-columns: 20px 1fr auto; align-items:center; gap:9px; height:30px; padding:0 9px; border-radius:8px; cursor:pointer }
+  .row { display:grid; grid-template-columns: 22px 1fr auto; align-items:center; gap:10px; height:33px; padding:0 10px; border-radius:8px; cursor:pointer }
   .row:hover { background:rgba(255,179,92,.08) }
-  .lg { width:20px; height:20px; border-radius:5px; display:grid; place-items:center; font-size:10.5px; font-weight:700; color:#fff }
-  .nm { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; color:#e6dcd2 }
+  .lg { width:22px; height:22px; border-radius:5px; display:grid; place-items:center; font-size:10.5px; font-weight:700; color:#fff }
+  .nm { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12.5px; color:#e6dcd2 }
   .nm span { font-size:10.5px; color:#857d75; margin-left:6px }
   .tag { font-size:10px; font-weight:600; padding:2px 6px; border-radius:5px; white-space:nowrap; color:#b8aea4; background:rgba(255,255,255,.05) }
   .tag.soon { color:#f5b14c; background:rgba(245,177,76,.1) }
@@ -1206,14 +1004,14 @@ const open = () => run(`open -a "Job Tracker"`);
 export const render = ({ output }) => {
   let j = null; try { j = JSON.parse(output); } catch (e) {}
   const c = (j && j.counts) || {}, ev = (j && j.events) || [];
-  // 5 rows fit under the stats: up to 3 next steps, up to 2 follow-ups, the rest filled with what's in play
-  const seen = new Set(), groups = []; let room = 5;
+  // 8 rows fit under the stats: up to 4 next steps, up to 3 follow-ups, the rest filled with what's in play
+  const seen = new Set(), groups = []; let room = 8;
   const add = (label, color, items, max, row) => { const take = items.filter(x => !seen.has(x.id)).slice(0, Math.min(max, room));
     if (!take.length) return; take.forEach(x => seen.add(x.id)); room -= take.length; groups.push([label, color, take.map(row)]); };
-  add("◷ NEXT UP", "#f5b14c", ev, 3, e => [e, e.next + " · " + due(e.date, e.left), e.left < 0 ? "late" : e.left <= 3 ? "soon" : ""]);
-  add("⚑ FOLLOW UP", "#ff9f6b", (j && j.followups) || [], 2, f => [f, f.days + "d no reply", "late"]);
-  if (groups.length > 1) room = Math.min(room, 5 - groups.length);  // each extra heading costs about a row
-  add("● IN PLAY", "#7cc8ff", (j && j.active) || [], 5, a => [a, STATUS[a.status][0] + (a.days != null ? " · " + (a.days ? a.days + "d" : "today") : ""), ""]);
+  add("◷ NEXT UP", "#f5b14c", ev, 4, e => [e, e.next + " · " + due(e.date, e.left), e.left < 0 ? "late" : e.left <= 3 ? "soon" : ""]);
+  add("⚑ FOLLOW UP", "#ff9f6b", (j && j.followups) || [], 3, f => [f, f.days + "d no reply", "late"]);
+  if (groups.length > 1) room = Math.min(room, 8 - groups.length);  // each extra heading costs about a row
+  add("● IN PLAY", "#7cc8ff", (j && j.active) || [], 8, a => [a, STATUS[a.status][0] + (a.days != null ? " · " + (a.days ? a.days + "d" : "today") : ""), ""]);
   const first = ev[0];
   return (
     <div>
@@ -1248,8 +1046,8 @@ export const command = "~/.stark/mail.sh";
 export const refreshFrequency = 30 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  .list { padding:4px 8px }
-  .it { display:grid; grid-template-columns: 8px 1fr auto; column-gap:9px; align-items:center; height:46px; padding:0 9px; border-radius:9px; cursor:pointer }
+  .list { padding:4px 10px }
+  .it { display:grid; grid-template-columns: 8px 1fr auto; column-gap:10px; align-items:center; height:46px; padding:0 10px; border-radius:9px; cursor:pointer }
   .it:hover { background:rgba(255,179,92,.08) }
   .dot { width:7px; height:7px; border-radius:50%; grid-row: 1 / span 2 }
   .from { font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#e6dcd2 }
@@ -1311,7 +1109,7 @@ export const render = ({ output, pick }, dispatch) => {
                 <span className="n">{n} UNREAD</span><span className="line" /></div>
               {(m.errors || {})[a] ? <div className="none" style={{ color: "#ff6b6b" }}>⚠ Can't reach {a} right now. Retrying every 30 s.</div>
                 : !items.length ? <div className="none">✓ {a === "Gmail" ? "Nothing new in Primary" : "No unread email"}</div>
-                : items.slice(0, 4).map(x => (
+                : items.slice(0, 5).map(x => (
                 <div className={"it" + (x.read ? "" : " unread")} key={x.id + x.acc}
                      onClick={() => run(`open "message://%3c${encodeURIComponent(x.id)}%3e"`)}>
                   <span className="dot" style={{ background: x.read ? "transparent" : c, boxShadow: x.read ? "none" : `0 0 6px ${c}` }} />
@@ -1333,12 +1131,13 @@ def h(x1, x2, y):
 def v(x, y1, y2):
     y1 += DY; y2 += DY
     links.append(f'<path className="flow" d="M {x} {y1} V {y2}" /><circle cx="{x}" cy="{y1}" r="2.5" /><circle cx="{x}" cy="{y2}" r="2.5" />')
-h(372, 392, 156); h(372, 392, 389); h(372, 392, 622); h(372, 392, 837)   # left column ↔ centre
-h(1078, 1098, 182); h(1078, 1098, 472); h(1078, 1098, 784)              # centre ↔ right column
-for y in (256, 502, 722): v(120, y, y + 20); v(284, y, y + 20)          # left stack
-v(560, 616, 636); v(910, 616, 636)                                      # markets ↔ news
-v(1180, 308, 328); v(1356, 308, 328)
-v(1180, 616, 636); v(1356, 616, 636)                                    # batcave ↔ ai
+for x in (L + 90, L + 310):                                             # left stack
+    v(x, 286, 306); v(x, 626, 646)
+for x in (C + 140, C + 426): v(x, 484, 504)                             # news ↔ job hunt
+for x in (R + 90, R + 310):                                             # right stack
+    v(x, 332, 352); v(x, 682, 702)
+h(432, 452, 171); h(432, 452, 466); h(432, 452, 789)                    # left column ↔ centre
+h(1018, 1038, 194); h(1018, 1038, 517); h(1018, 1038, 817)              # centre ↔ right column
 POS["aa-links"] = (0, 0, 0, 0)
 widget("aa-links", '''// Glowing connectors between panels (file name sorts first so it draws behind them).
 export const command = "true";
@@ -1598,9 +1397,9 @@ const installMonkey = () => {
   const troop = Array.from({ length: MONKEYS }, (_, i) => monkey(i));
   window.__monkeyNow = async () => { for (const go of troop) { const p = go(); if (await Promise.race([p, Promise.resolve("running")]) === "running") return "sent"; } return "all out"; };
 };
-const PAIRS = [["clock", "weather"], ["weather", "system"], ["system", "connections"], ["markets", "ai-wire"],
-  ["batcave", "mail"], ["mail", "jobs"], ["clock", "markets"], ["weather", "markets"], ["system", "ai-wire"],
-  ["connections", "ai-wire"], ["markets", "batcave"], ["markets", "mail"], ["ai-wire", "jobs"]];
+const PAIRS = [["clock", "weather"], ["weather", "system"], ["ai-wire", "jobs"], ["batcave", "mail"], ["mail", "connections"],
+  ["clock", "ai-wire"], ["weather", "ai-wire"], ["system", "jobs"], ["ai-wire", "batcave"], ["ai-wire", "mail"],
+  ["jobs", "mail"], ["jobs", "connections"]];
 const LAYOUT_VERSION = "3";  // clears positions saved back when panels could be rearranged
 const installLinks = () => {
   if (window.__hudLinks === "%%BUILD%%") return; window.__hudLinks = "%%BUILD%%";

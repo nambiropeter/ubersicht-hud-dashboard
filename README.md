@@ -1,6 +1,6 @@
 # Desktop Dashboard
 
-A macOS desktop dashboard built on [Übersicht](https://tracesof.net/uebersicht/), with Nairobi (NSE) markets, AI news, weather, unread mail, git projects, system stats and network connections, plus a matching terminal theme.
+A macOS desktop dashboard built on [Übersicht](https://tracesof.net/uebersicht/), with AI news, job hunt, weather, unread mail, git projects, system stats and network connections, plus a matching terminal theme.
 
 Everything is plain scripts: no API keys, no paid services, no AI calls.
 
@@ -18,7 +18,6 @@ Everything is plain scripts: no API keys, no paid services, no AI calls.
 | Weather | Nairobi now + 5-day forecast | [Open-Meteo](https://open-meteo.com) | 15 min |
 | System | CPU, memory, disk, battery | `top`, `memory_pressure`, `df`, `pmset` | 10 s |
 | Connections | Live health of 8 services around a HUB, throughput, Wi‑Fi / VPN / speed test | Python sockets, `netstat`, CoreWLAN, `networkQuality` | 30 s |
-| NSE Market | NSE All-Share (NASI) 3-month chart + Kenyan blue chips, plus a MY NSE portfolio view | afx.kwayisi.org (delayed) | 5 min |
 | AI & Tech Wire | Tech headlines, AI stories first | CNBC Tech + Yahoo RSS | 15 min |
 | Batcave | Git projects in `~/Documents/GitHub` and `~/Developer` | `git` | 1 min |
 | Mail | Unread Primary emails, Gmail / iCloud tabs | Gmail IMAP + Mail.app (AppleScript) | 30 s |
@@ -32,9 +31,6 @@ Everything is plain scripts: no API keys, no paid services, no AI calls.
 | ![System](docs/system.png) **System**: CPU, memory, disk and battery rings that turn amber above 65% and red above 85% (battery red under 20%, ⚡ while charging), and a fan that spins faster as the combined load rises (CPU counts most, then memory, battery drain and disk), from a lazy turn at idle to a blur flat out. Plus uptime, process count and free disk. | ![Connections](docs/connections-healthy.png) **Connections**: live health of 8 services around a HUB, plus download and upload speed. See [Connections widget](#connections-widget) for every state. |
 | ![Batcave](docs/batcave.png) **Batcave**: your git projects, most recently committed first, with branch, uncommitted changes (✎) and the age of the last commit. Click one to open it in VS Code. | ![Mail](docs/mail.png) **Mail**: unread mail from Gmail's Primary tab and iCloud, in tabs. Click an email to open it in Mail. |
 | ![Job Hunt](docs/jobs.png) **Job Hunt**: upcoming next steps (OAs, interviews, offer deadlines), applications with no reply in 14 days, and what's still in play, from the Job Tracker app. Click to open it. | ![AI & Tech Wire](docs/ai-wire.png) **AI & Tech Wire**: the top 5 tech headlines, AI stories ranked first. Click to read. |
-
-![NSE Market](docs/markets.png)
-**NSE Market**: the Nairobi All-Share Index (NASI) over 3 months with year-to-date change, market breadth and the day's top gainer and loser, plus six Kenyan blue chips (edit `BLUE` in nse.py) with NSE open/closed status. Hover a stock to put its own 3‑month chart on the big stage; click to open it on afx. The MY NSE toggle shows your own portfolio (kept in a private, git-ignored file).
 
 Each data panel shows a red badge in its header if its data fails or stops updating (for example *No internet*).
 Screenshots use placeholder projects and emails; everything else is live data.
