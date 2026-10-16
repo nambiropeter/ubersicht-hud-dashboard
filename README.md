@@ -14,7 +14,7 @@ Everything is plain scripts: no API keys, no paid services, no AI calls.
 
 | Widget | Shows | Data source | Refresh |
 |---|---|---|---|
-| Clock | Time, date, New York / London / Tokyo market sessions | System clock | 1 s |
+| Clock | Time, date, New York / London / Tokyo world clocks | System clock | 1 s |
 | Weather | Nairobi now + 5-day forecast | [Open-Meteo](https://open-meteo.com) | 15 min |
 | System | CPU, memory, disk, battery | `top`, `memory_pressure`, `df`, `pmset` | 10 s |
 | Connections | Live health of 8 services around a HUB, throughput, Wi‑Fi / VPN / speed test | Python sockets, `netstat`, CoreWLAN, `networkQuality` | 30 s |
@@ -27,7 +27,7 @@ Everything is plain scripts: no API keys, no paid services, no AI calls.
 
 | | |
 |---|---|
-| ![Clock](docs/clock.png) **Clock**: local time and date with New York, London and Tokyo, each showing when its stock market opens or closes. | ![Weather](docs/weather.png) **Weather**: current conditions, feels‑like, humidity, wind, UV, sunrise/sunset and a 5‑day forecast with rain chance bars. |
+| ![Clock](docs/clock.png) **Clock**: local time and date with New York, London and Tokyo world clocks (hover one to put it on the big display). | ![Weather](docs/weather.png) **Weather**: current conditions, feels‑like, humidity, wind, UV, sunrise/sunset and a 5‑day forecast with rain chance bars. |
 | ![System](docs/system.png) **System**: CPU, memory, disk and battery rings that turn amber above 65% and red above 85% (battery red under 20%, ⚡ while charging), and a fan that spins faster as the combined load rises (CPU counts most, then memory, battery drain and disk), from a lazy turn at idle to a blur flat out. Plus uptime, process count and free disk. | ![Connections](docs/connections-healthy.png) **Connections**: live health of 8 services around a HUB, plus download and upload speed. See [Connections widget](#connections-widget) for every state. |
 | ![Batcave](docs/batcave.png) **Batcave**: your git projects, most recently committed first, with branch, uncommitted changes (✎) and the age of the last commit. Click one to open it in VS Code. | ![Mail](docs/mail.png) **Mail**: unread mail from Gmail's Primary tab and iCloud, in tabs. Click an email to open it in Mail. |
 | ![Job Hunt](docs/jobs.png) **Job Hunt**: upcoming next steps (OAs, interviews, offer deadlines), applications with no reply in 14 days, and what's still in play, from the Job Tracker app. Click to open it. | ![AI & Tech Wire](docs/ai-wire.png) **AI & Tech Wire**: the top 5 tech headlines, AI stories ranked first. Click to read. |
@@ -114,14 +114,13 @@ An account without one is read from Mail.app instead, as is, and only while Mail
 All widgets are generated from **`build_widgets.py`**, so edit it and run `python3 ~/.stark/build_widgets.py`.
 
 - **Layout:** the `POS` grid at the top (laid out for a 1470×956 pt screen)
-- **Stocks:** `SPARK` in `market.py`
 - **Weather location:** `LAT`/`LON` in `weather.sh`
 
 ## Files
 
 ```
 build_widgets.py   generates all Übersicht widgets
-market.py          quotes, sparklines, market caps, news (stdlib only)
+market.py          AI & tech news feed, ranked for software engineers (stdlib only)
 jobs.py            Job Hunt summary from the Job Tracker app's local data
 weather.sh         Open-Meteo forecast
 system.sh          CPU / memory / disk / battery
