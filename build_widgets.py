@@ -889,13 +889,13 @@ export const render = ({ output, view, speed: mine, testing: busy, vpnBusy }, di
 };''')
 
 # ───────────────────────── MARKETS ─────────────────────────
-widget("markets", r'''// Tech markets: NASDAQ hero chart + the 6 biggest tech names by market cap, with 5-day charts. Edit symbols in ~/.stark/market.py (SPARK).
+widget("markets", r'''// NSE market: the Nairobi All-Share index (NASI) over 3 months + Kenya's blue chips, from ~/.stark/nse.py market (edit BLUE there).
 // MY NSE (toggle in the header, remembered): your Nairobi Securities Exchange portfolio from ~/.stark/nse.py (holdings in the
 // private ~/.stark/portfolio.json): total value over 3 months, a tile per holding (click to change shares) and + ADD.
 import { run } from "uebersicht";
-export const command = "%%PY%% ~/.stark/market.py json quotes";
+export const command = "%%PY%% ~/.stark/nse.py market";
 export const refreshFrequency = 5 * 60 * 1000;
-const savedView = () => { try { return localStorage.getItem("mk-view") || "TECH"; } catch (e) { return "TECH"; } };
+const savedView = () => { try { return localStorage.getItem("mk-view") === "NSE" ? "NSE" : "MKT"; } catch (e) { return "MKT"; } };
 export const initialState = { output: "", view: savedView(), pf: window.__pf || null };
 export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: ev.view } : ev.type === "PF" ? { ...prev, pf: ev.pf }
   : { ...prev, output: ev.output, error: ev.error };
@@ -956,33 +956,17 @@ export const className = `
 `;
 %%FMT%%
 %%SPARK%%
-const nyOpen = () => {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit" })
-    .formatToParts(new Date()).map(x => [x.type, x.value]));
-  const m = (+p.hour % 24) * 60 + +p.minute;
-  return p.weekday !== "Sat" && p.weekday !== "Sun" && m >= 570 && m < 960;
-};
-const cap = c => !c ? "" : c >= 1e12 ? `$${(c / 1e12).toFixed(2)}T` : `$${Math.round(c / 1e9)}B`;
-const yahoo = s => run(`open "https://finance.yahoo.com/quote/${encodeURIComponent(s)}"`);
-// Hover a tile to put its 5-day chart on the big stage; leaving the panel (or 8 s idle) brings NASDAQ back.
+// Hover a tile to put its 3-month chart on the big stage; leaving the panel (or 8 s idle) brings the index back.
 const pick = (root, sym) => {
   if (!root) return;
   root.querySelectorAll(".hero").forEach(h => h.classList.toggle("on", h.dataset.sym === sym));
   root.querySelectorAll(".tile").forEach(t => t.classList.toggle("sel", t.dataset.sym === sym));
 };
 // Leaving into a gap between panels sends no mouseleave (Übersicht passes those clicks through to the desktop),
-// so the stage also falls back to NASDAQ 8 s after the mouse last moved over the panel.
-const home = e => { const el = e.currentTarget; clearTimeout(window.__mkHome); window.__mkHome = setTimeout(() => pick(el, el.dataset.home || "^IXIC"), 8000); };
-const HeroView = ({ x, label, on }) => (
-  <div className={"hero" + (on ? " on" : "")} data-sym={x.sym} onClick={() => yahoo(x.sym)}>
-    <div className="hname">{label}</div>
-    <div className="hrow">
-      <div className="hp num">{x.p.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-      <div className={"hc num " + (x.c >= 0 ? "up" : "dn")}>{pct(x.c)}</div>
-      <div className="range num">Day high <b>{fmt(x.hi)}</b><br />Day low <b>{fmt(x.lo)}</b></div>
-    </div>
-    <div className="chart"><Spark d={x.spark} ts={x.ts} base={x.prev} w={650} h={200} sw={2.2} fillOp={.45} axis /></div>
-  </div>);
+// so the stage also falls back to the index 8 s after the mouse last moved over the panel.
+const home = e => { const el = e.currentTarget; clearTimeout(window.__mkHome); window.__mkHome = setTimeout(() => pick(el, el.dataset.home || "NASI"), 8000); };
+const afx = s => run(`open "https://afx.kwayisi.org/nse/${s === "NASI" ? "" : s.toLowerCase() + ".html"}"`);
+const vol = v => v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? Math.round(v / 1e3) + "K" : String(v || 0);
 // ── MY NSE ──
 const kes = (v, sign) => (sign && v > 0 ? "+" : v < 0 ? "−" : "") + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const nseOpen = () => { const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: "Africa/Nairobi", hour12: false, weekday: "short", hour: "2-digit", minute: "2-digit" })
@@ -994,8 +978,8 @@ const loadPf = (dispatch, args = "", force = false) => {
   run(`%%PY%% ~/.stark/nse.py ${args}`).then(out => { let pf = null; try { pf = JSON.parse(out); } catch (e) {}
     window.__pfBusy = false; if (pf && !pf.error) { window.__pf = pf; window.__pfAt = Date.now(); } dispatch({ type: "PF", pf: pf || window.__pf }); })
     .catch(() => { window.__pfBusy = false; }); };
-const PfHero = ({ label, big, ch, right, d, ts, on, k }) => (
-  <div className={"hero" + (on ? " on" : "")} data-sym={k}>
+const PfHero = ({ label, big, ch, right, d, ts, on, k, go }) => (
+  <div className={"hero" + (on ? " on" : "")} data-sym={k} onClick={go}>
     <div className="hname">{label}</div>
     <div className="hrow">
       <div className="hp num">{big}</div>
@@ -1035,42 +1019,50 @@ const Nse = ({ pf, dispatch }) => {
           <b>+</b><span>{more ? `ADD · ${more} MORE HELD` : "ADD STOCK"}</span></div>
       </div>
     </div>); };
+// ── NSE MARKET ──
+const Market = ({ m }) => {
+  const n = m.nasi, xs = m.stocks || [], g = (m.gainers || [])[0], l = (m.losers || [])[0];
+  // flash a price (and redraw its sparkline) when it moved since the last refresh
+  const was = window.__mkPrev || {}; window.__mkPrev = Object.fromEntries(xs.map(x => [x.sym, x.p]));
+  const moved = x => was[x.sym] == null || was[x.sym] === x.p ? "" : x.p > was[x.sym] ? "flu" : "fld";
+  return (
+    <div data-home="NASI" onMouseLeave={e => pick(e.currentTarget, "NASI")} onMouseMove={home}>
+      <div className="stage">
+        {n ? <PfHero k="NASI" on go={() => afx("NASI")} label={<span><Logo s="NSE" big /><b>NSE ALL-SHARE (NASI)</b> · 3 MONTHS</span>}
+          big={n.p.toFixed(2)} ch={n.pct} d={n.hist} ts={n.ts}
+          right={<span>{n.ytd != null && <span>Year to date <b className={n.ytd >= 0 ? "up" : "dn"}>{pct(n.ytd)}</b><br /></span>}
+            Today <b className="up">{m.up}▲</b> <b className="dn">{m.down}▼</b>{n.cap ? " · " + n.cap : ""}<br />
+            {g && <span>Top <b className="up">{g.sym} {pct(g.pct)}</b></span>}{l && <span> · <b className="dn">{l.sym} {pct(l.pct)}</b></span>}</span>} />
+          : <div className="hero on muted" data-sym="NASI">Index chart unavailable right now.</div>}
+        {xs.map(x => <PfHero key={x.sym} k={x.sym} go={() => afx(x.sym)} label={<span><Logo s={x.sym} big /><b>{x.sym}</b> · {x.name} · 3 MONTHS</span>}
+          big={<span><small>KES</small>{kes(x.p)}</span>} ch={x.pct} d={x.hist} ts={x.ts}
+          right={<span>Today <b className={x.ch >= 0 ? "up" : "dn"}>{kes(x.ch, 1)}</b><br />Volume <b>{vol(x.vol)}</b>
+            {x.own ? <span><br /><b style={{ color: "#f5b14c" }}>IN YOUR PORTFOLIO</b></span> : null}</span>} />)}
+      </div>
+      <div className="grid">
+        {xs.map(x => (
+          <div className={"tile " + (x.ch >= 0 ? "tu" : "td")} key={x.sym} data-sym={x.sym} onClick={() => afx(x.sym)}
+            onMouseEnter={e => pick(e.currentTarget.closest(".grid").parentElement, x.sym)}>
+            <div className="top"><span className="s"><Logo s={x.sym} />{x.sym}</span><span className={"c num " + (x.ch >= 0 ? "up" : "dn")}>{pct(x.pct)}</span></div>
+            <div className={"p num " + moved(x)}>{kes(x.p)}<span className="tcap">{x.own ? <b style={{ color: "#f5b14c" }}>● OWNED</b> : "VOL " + vol(x.vol)}</span></div>
+            <Spark d={x.hist.slice(-22)} base={x.hist[Math.max(0, x.hist.length - 22)]} w={186} h={34} fillOp={.34} draw={!!moved(x)} />
+          </div>))}
+      </div>
+    </div>); };
 export const render = ({ output, view, pf }, dispatch) => {
   if (view === "NSE") loadPf(dispatch);
   const setView = v => { try { localStorage.setItem("mk-view", v); } catch (e) {} dispatch({ type: "VIEW", view: v }); if (v === "NSE") loadPf(dispatch); };
-  let q = []; try { q = JSON.parse(output); } catch (e) {}
-  const by = Object.fromEntries(q.map(x => [x.sym, x])), hero = by["^IXIC"], open = nyOpen();
-  // rank by market cap: the 6 biggest get tiles
-  const ranked = q.filter(x => x.sym !== "^IXIC").sort((a, b) => (b.cap || 0) - (a.cap || 0));
-  const top = ranked.slice(0, 6);
-  // flash a price (and redraw its sparkline) when it moved since the last refresh
-  const was = window.__mkPrev || {}; if (q.length) window.__mkPrev = Object.fromEntries(q.map(x => [x.sym, x.p]));
-  const moved = x => was[x.sym] == null || was[x.sym] === x.p ? "" : x.p > was[x.sym] ? "flu" : "fld";
+  let m = null; try { m = JSON.parse(output); } catch (e) {}
   return (
     <div>
-      <header><span style={{ color: "#4ade80" }}>↗</span><h1>{view === "NSE" ? "MY NSE" : "TECH MARKETS"}</h1>
-        <span className="sub">{view === "NSE" ? "AFX · DELAYED" : "RANKED BY MARKET CAP"}</span>
+      <header><span style={{ color: "#4ade80" }}>↗</span><h1>{view === "NSE" ? "MY NSE" : "NSE MARKET"}</h1>
+        <span className="sub">AFX · DELAYED</span>
         {(o => <span className="pill" style={{ color: o ? "#4ade80" : "#ffb35c", background: o ? "rgba(74,222,128,.1)" : "rgba(255,179,92,.1)" }}>
-          ● {view === "NSE" ? "NSE" : "NYSE"} {o ? "OPEN" : "CLOSED"}</span>)(view === "NSE" ? nseOpen() : open)}
-        <span className="seg">{[["TECH", "TECH"], ["NSE", "MY NSE"]].map(([v, l]) => <span key={v} className={view === v ? "on" : ""} onClick={() => setView(v)}>{l}</span>)}</span></header>
-      {view === "NSE" ? <Nse pf={pf} dispatch={dispatch} /> :
-       !hero ? <div className="hero on muted">Connecting to markets…</div> : <div data-home="^IXIC" onMouseLeave={e => pick(e.currentTarget, "^IXIC")} onMouseMove={home}>
-        <div className="stage">
-          <HeroView x={hero} label={<span><Logo s="^IXIC" big />NASDAQ COMPOSITE · 5 DAYS</span>} on />
-          {top.map((x, i) => <HeroView key={x.sym} x={x}
-            label={<span><Logo s={x.sym} big /><b>#{i + 1} {x.sym}</b>{x.name !== x.sym ? " · " + x.name : ""} · 5 DAYS · {cap(x.cap)}</span>} />)}
-        </div>
-        <div className="grid">
-          {top.map((x, i) => (
-            <div className={"tile " + (x.c >= 0 ? "tu" : "td")} key={x.sym} data-sym={x.sym} onClick={() => yahoo(x.sym)}
-              onMouseEnter={e => pick(e.currentTarget.closest(".grid").parentElement, x.sym)}>
-              <div className="top"><span className="s"><Logo s={x.sym} /><em className="rk">#{i + 1}</em>{x.sym}</span>
-                <span className={"c num " + (x.c >= 0 ? "up" : "dn")}>{pct(x.c)}</span></div>
-              <div className={"p num " + moved(x)}>{fmt(x.p)}<span className="tcap">{cap(x.cap)}</span></div>
-              <Spark d={x.spark} base={x.prev} w={186} h={34} fillOp={.34} draw={!!moved(x)} />
-            </div>))}
-        </div>
-      </div>}
+          ● NSE {o ? "OPEN" : "CLOSED"}</span>)(nseOpen())}
+        <span className="seg">{[["MKT", "MARKET"], ["NSE", "MY NSE"]].map(([v, l]) => <span key={v} className={view === v ? "on" : ""} onClick={() => setView(v)}>{l}</span>)}</span></header>
+      {view === "NSE" ? <Nse pf={pf} dispatch={dispatch} />
+        : !m ? <div className="hero on muted">Connecting to the NSE…</div>
+        : m.error ? <div className="hero on muted">NSE prices unavailable right now.</div> : <Market m={m} />}
     </div>
   );
 };''')
