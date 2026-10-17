@@ -1,6 +1,6 @@
 # Desktop Dashboard
 
-A macOS desktop dashboard built on [Übersicht](https://tracesof.net/uebersicht/), with AI news, job hunt, weather, unread mail, git projects, system stats and network connections, plus a matching terminal theme.
+A macOS desktop dashboard built on [Übersicht](https://tracesof.net/uebersicht/), with a playable chess puzzle, live Lichess TV, an anime airing schedule, weather, git projects, system stats and network connections, plus a matching terminal theme.
 
 Everything is plain scripts: no API keys, no paid services, no AI calls.
 
@@ -8,7 +8,7 @@ Everything is plain scripts: no API keys, no paid services, no AI calls.
 
 **Look and feel:** refined dark "liquid glass" panels (frosted, translucent, a soft light that follows the cursor), thin SF numerals, small Orbitron titles, one amber accent with an amber hairline across the top of each panel. `wallpaper_glass.py` generates the matching dark wallpaper. Over the widgets the cursor becomes a crosshair with a trailing targeting ring and click ripples.
 
-**Interactive:** the panels are chained in place. Pull one by its header (or the clock from anywhere) and its chains stretch; let go and it springs back home. Click stocks, headlines, projects or emails to open them.
+**Interactive:** the panels are chained in place. Pull one by its header (or the clock from anywhere) and its chains stretch; let go and it springs back home. Click projects or shows to open them, and play the chess puzzle right on the desktop.
 
 ## Widgets
 
@@ -18,10 +18,10 @@ Everything is plain scripts: no API keys, no paid services, no AI calls.
 | Weather | Nairobi now + 5-day forecast | [Open-Meteo](https://open-meteo.com) | 15 min |
 | System | CPU, memory, disk, battery | `top`, `memory_pressure`, `df`, `pmset` | 10 s |
 | Connections | Live health of 8 services around a HUB, throughput, Wi‑Fi / VPN / speed test | Python sockets, `netstat`, CoreWLAN, `networkQuality` | 30 s |
-| AI & Tech Wire | Tech headlines, AI stories first | CNBC Tech + Yahoo RSS | 15 min |
+| Chess Puzzle | Playable daily puzzle (or a fresh one), hints, solution, streak | [Lichess](https://lichess.org) API | on demand |
 | Batcave | Git projects in `~/Documents/GitHub` and `~/Developer` | `git` | 1 min |
-| Mail | Unread Primary emails, Gmail / iCloud tabs | Gmail IMAP + Mail.app (AppleScript) | 30 s |
-| Job Hunt | Next steps, follow-ups and live applications | Job Tracker app (local) | 1 min |
+| Lichess TV | The top-rated game being played right now, live | Lichess TV feed | 3 s |
+| Anime | Episodes airing around now with countdowns, trending this season | [AniList](https://anilist.co) GraphQL | 15 min |
 
 ### What each widget looks like
 
@@ -29,13 +29,11 @@ Everything is plain scripts: no API keys, no paid services, no AI calls.
 |---|---|
 | ![Clock](docs/clock.png) **Clock**: local time and date with New York, London and Tokyo world clocks (hover one to put it on the big display). | ![Weather](docs/weather.png) **Weather**: current conditions, feels‑like, humidity, wind, UV, sunrise/sunset and a 5‑day forecast with rain chance bars. |
 | ![System](docs/system.png) **System**: CPU, memory, disk and battery rings that turn amber above 65% and red above 85% (battery red under 20%, ⚡ while charging), and a fan that spins faster as the combined load rises (CPU counts most, then memory, battery drain and disk), from a lazy turn at idle to a blur flat out. Plus uptime, process count and free disk. | ![Connections](docs/connections-healthy.png) **Connections**: live health of 8 services around a HUB, plus download and upload speed. See [Connections widget](#connections-widget) for every state. |
-| ![Batcave](docs/batcave.png) **Batcave**: your git projects, most recently committed first, with branch, uncommitted changes (✎) and the age of the last commit. Click one to open it in VS Code. | ![Mail](docs/mail.png) **Mail**: unread mail from Gmail's Primary tab and iCloud, in tabs. Click an email to open it in Mail. |
-| ![Job Hunt](docs/jobs.png) **Job Hunt**: upcoming next steps (OAs, interviews, offer deadlines), applications with no reply in 14 days, and what's still in play, from the Job Tracker app. Click to open it. | ![AI & Tech Wire](docs/ai-wire.png) **AI & Tech Wire**: the top 5 tech headlines, AI stories ranked first. Click to read. |
+| ![Batcave](docs/batcave.png) **Batcave**: your git projects, most recently committed first, with branch, uncommitted changes (✎) and the age of the last commit. Click one to open it in VS Code. | ![Lichess TV](docs/chesstv.png) **Lichess TV**: the top-rated game on Lichess right now, move by move, with live clocks. Click the board to watch it on Lichess. |
+| ![Chess Puzzle](docs/puzzle.png) **Chess Puzzle**: Lichess's daily puzzle, playable on the desktop. Drag or click pieces (legal moves are dotted); the opponent replies by itself, a wrong move snaps back. Hint, solution, skip, and a solved count with streak. | ![Anime](docs/anime.png) **Anime**: the next big episode with a countdown, what aired in the last few hours and what's coming up, plus a TRENDING tab of this season's top shows. Click a show to open it on AniList. |
 
 Each data panel shows a red badge in its header if its data fails or stops updating (for example *No internet*).
-Screenshots use placeholder projects and emails; everything else is live data.
-
-A launchd agent tells Mail.app to sync every 10 minutes and whenever the network changes (`mail-sync.sh`).
+Screenshots use placeholder projects; everything else is live data.
 
 ## Connections widget
 
@@ -80,7 +78,7 @@ git clone https://github.com/nambiropeter/ubersicht-hud-dashboard ~/.stark
 ```
 
 The repo **must** live at `~/.stark` (the widgets call their scripts from there). `install.sh` installs Übersicht
-(via Homebrew), compiles the Swift helpers, generates the widgets and loads the background agents (mail sync and the
+(via Homebrew), compiles the Swift helpers, generates the widgets and loads the background agent (the
 pointer hider). Open Übersicht once and allow it in **System Settings → Privacy & Security** if macOS asks.
 To use it only for the Connections widget, delete the other `.jsx` files from
 `~/Library/Application Support/Übersicht/widgets/` (they come back on the next rebuild).
@@ -95,20 +93,6 @@ Optional terminal theme (prompt, aliases, `stocks`, `news`, `alfred`, `jarvis`):
 echo 'source ~/.stark/stark.zsh' >> ~/.zshrc
 ```
 
-macOS will ask once to let Übersicht and `osascript` control **Mail**.
-
-**Mail without the Mail app:** store an app password for each account in the Keychain (never written to a file),
-and `mail_direct.py` reads it straight from the server:
-
-```sh
-# Gmail (shows Gmail's real Primary tab): https://myaccount.google.com/apppasswords
-security add-generic-password -U -s desktop-widget-gmail -a you@gmail.com -w
-# iCloud (every unread inbox email, unfiltered): account.apple.com → App-Specific Passwords
-security add-generic-password -U -s desktop-widget-icloud -a you@icloud.com -w
-```
-
-An account without one is read from Mail.app instead, as is, and only while Mail is open.
-
 ## Customize
 
 All widgets are generated from **`build_widgets.py`**, so edit it and run `python3 ~/.stark/build_widgets.py`.
@@ -120,8 +104,8 @@ All widgets are generated from **`build_widgets.py`**, so edit it and run `pytho
 
 ```
 build_widgets.py   generates all Übersicht widgets
-market.py          AI & tech news feed, ranked for software engineers (stdlib only)
-jobs.py            Job Hunt summary from the Job Tracker app's local data
+puzzle.py          Lichess puzzle + every position and legal move along it (needs `pip3 install chess`)
+anime.py           AniList airing schedule + trending anime
 weather.sh         Open-Meteo forecast
 system.sh          CPU / memory / disk / battery
 network.sh         IP, throughput, service latency, Wi-Fi / VPN / public IP
@@ -129,10 +113,7 @@ speedtest.sh       cached networkQuality speed test
 wifi.swift         Wi-Fi link details (CoreWLAN)
 hudcursor.swift    hides the system pointer over panels
 batcave.sh         git project status + commit activity
-mail.sh            unread Primary mail from Mail.app
-mail_direct.py     Gmail Primary + iCloud over IMAP (app passwords from Keychain)
-mail-sync.sh       syncs Mail.app accounts (run by launchd)
-launchd/           background agents (mail sync timer + network change, pointer hider)
+launchd/           background agent (pointer hider)
 docs/              README screenshots
 stark.zsh          terminal theme
 dashboard.html     browser market dashboard (TradingView widgets)
@@ -143,8 +124,6 @@ install.sh         one-shot setup
 ## Uninstall
 
 ```sh
-launchctl bootout gui/$UID/com.stark.mailsync.timer
-launchctl bootout gui/$UID/com.stark.mailsync.network
 launchctl bootout gui/$UID/com.stark.hudcursor
 rm ~/Library/LaunchAgents/com.stark.*.plist
 rm ~/Library/Application\ Support/Übersicht/widgets/*.jsx

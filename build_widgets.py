@@ -17,8 +17,8 @@ PY = shutil.which("python3") or "/usr/bin/python3"
 L, C, R = 32, 452, 1038
 DY = -36  # Übersicht's canvas starts below the menu bar
 POS = {
-    "clock":   (L, 56, 400, 230),  "ai-wire": (C, 56, 566, 428),   "batcave":     (R, 56, 400, 276),
-    "weather": (L, 306, 400, 320), "jobs":    (C, 504, 566, 428),  "mail":        (R, 352, 400, 330),
+    "clock":   (L, 56, 400, 230),  "puzzle":  (C, 56, 566, 428),   "batcave":     (R, 56, 400, 276),
+    "weather": (L, 306, 400, 320), "anime":   (C, 504, 566, 428),  "chesstv":     (R, 352, 400, 330),
     "system":  (L, 646, 400, 286),                                 "connections": (R, 702, 400, 230),
 }
 
@@ -306,7 +306,74 @@ WARM = [
 # itself (Übersicht's WebKit ignores image cursors; CSS can't be trusted to draw it).
 CURSOR = "none"
 
-NET = {"weather", "ai-wire", "mail", "connections"}  # panels that need the internet
+NET = {"weather", "puzzle", "anime", "chesstv", "connections"}  # panels that need the internet
+
+# Chess board shared by the puzzle and Lichess TV panels (pieces: Lichess cburnett set, downloaded by puzzle.py)
+CHESS = r"""const FILES = "abcdefgh";
+const parseFen = fen => { const b = {}; fen.split(" ")[0].split("/").forEach((row, r) => { let f = 0;
+  for (const c of row) { if (/\d/.test(c)) f += +c; else { b[FILES[f] + (8 - r)] = (c === c.toUpperCase() ? "w" : "b") + c.toUpperCase(); f++; } } });
+  return b; };
+// display-only move (an alternative mate the solution didn't list): castling, en passant and promotion
+const applyUci = (fen, uci) => { const b = parseFen(fen), [f, t] = [uci.slice(0, 2), uci.slice(2, 4)], pc = b[f];
+  if (pc[1] === "K" && Math.abs(FILES.indexOf(f[0]) - FILES.indexOf(t[0])) === 2) { const k = t[0] === "g", r = (k ? "h" : "a") + f[1];
+    b[(k ? "f" : "d") + f[1]] = b[r]; delete b[r]; }
+  if (pc[1] === "P" && f[0] !== t[0] && !b[t]) delete b[t[0] + f[1]];
+  delete b[f]; b[t] = uci[4] ? pc[0] + uci[4].toUpperCase() : pc;
+  const rows = []; for (let r = 8; r >= 1; r--) { let row = "", e = 0;
+    for (const fl of FILES) { const p = b[fl + r]; if (!p) { e++; continue; } if (e) { row += e; e = 0; } row += p[0] === "w" ? p[1] : p[1].toLowerCase(); }
+    rows.push(row + (e || "")); }
+  return rows.join("/") + " " + (fen.split(" ")[1] === "w" ? "b" : "w"); };
+const Board = ({ fen, flip, size, lm, sel, hint, bad, targets = [], movable, onSelect, onMove, coords = true }) => {
+  const q = size / 8, b = parseFen(fen);
+  const xy = sq => { const f = FILES.indexOf(sq[0]), r = +sq[1] - 1; return flip ? [(7 - f) * q, r * q] : [f * q, (7 - r) * q]; };
+  const at = (e, el) => { const r = el.getBoundingClientRect(), c = Math.floor((e.clientX - r.left) / q), w = Math.floor((e.clientY - r.top) / q);
+    if (c < 0 || c > 7 || w < 0 || w > 7) return null; return flip ? FILES[7 - c] + (w + 1) : FILES[c] + (8 - w); };
+  const down = e => {
+    if (!onMove || e.button !== 0) return; const el = e.currentTarget, sq = at(e, el); if (!sq) return;
+    if (!movable(sq)) { if (sel && sq !== sel) onMove(sel, sq) || onSelect(null); return; }
+    e.preventDefault(); onSelect(sq);
+    const img = el.querySelector(`img[data-sq="${sq}"]`), sx = e.clientX, sy = e.clientY;
+    const mv = ev => { if (img) { img.style.transform = `translate(${ev.clientX - sx}px, ${ev.clientY - sy}px) scale(1.1)`; img.style.zIndex = 9; img.style.animation = "none"; } };
+    const up = ev => { document.removeEventListener("mousemove", mv); document.removeEventListener("mouseup", up);
+      if (img) { img.style.transform = ""; img.style.zIndex = ""; }
+      const to = at(ev, el); if (to && to !== sq && !onMove(sq, to)) onSelect(null); };
+    document.addEventListener("mousemove", mv); document.addEventListener("mouseup", up); };
+  const sqs = []; for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) sqs.push(FILES[f] + (8 - r));
+  const lf = lm && lm.slice(0, 2), lt = lm && lm.slice(2, 4);
+  return (
+    <div className="board" onMouseDown={down}>
+      {sqs.map(s => { const [x, y] = xy(s), dark = (FILES.indexOf(s[0]) + +s[1]) % 2 === 0;
+        return <div key={s} className={"sq" + (dark ? " d" : "") + (s === lf || s === lt ? " lm" : "") + (s === sel ? " sel" : "") + (s === hint ? " hint" : "")}
+          style={{ left: x, top: y, width: q, height: q }}>
+          {coords && (flip ? s[1] === "8" : s[1] === "1") && <span className="cf">{s[0]}</span>}
+          {coords && (flip ? s[0] === "h" : s[0] === "a") && <span className="cr">{s[1]}</span>}
+        </div>; })}
+      {bad && <div key={bad} className="sq bad" style={{ left: xy(bad.slice(0, 2))[0], top: xy(bad.slice(0, 2))[1], width: q, height: q }} />}
+      {Object.entries(b).map(([s, p]) => { const [x, y] = xy(s), slide = s === lt && lf ? xy(lf) : null;
+        return <img key={fen + s} data-sq={s} src={`chess/${p}.svg`} alt="" className={slide ? "slide" : ""}
+          style={{ left: x, top: y, width: q, height: q, ...(slide ? { "--dx": slide[0] - x + "px", "--dy": slide[1] - y + "px" } : {}) }} />; })}
+      {targets.map(s => { const [x, y] = xy(s);
+        return <div key={"t" + s} className={"dot" + (b[s] ? " cap" : "")} style={{ left: x, top: y, width: q, height: q }} />; })}
+    </div>
+  );
+};"""
+
+BOARDCSS = """.board { position:relative; border-radius:10px; overflow:hidden; box-shadow:0 10px 30px rgba(0,0,0,.4) }
+  .sq { position:absolute; background:#d9c4a3 } .sq.d { background:#a17b59 }
+  .sq.lm { box-shadow: inset 0 0 0 999px rgba(245,177,76,.42) }
+  .sq.sel { box-shadow: inset 0 0 0 999px rgba(120,190,110,.55) }
+  .sq.hint { box-shadow: inset 0 0 0 999px rgba(124,200,255,.5) }
+  .sq.bad { background:transparent; z-index:3; pointer-events:none; animation: badsq .9s ease-out forwards }
+  @keyframes badsq { 0%, 40% { box-shadow: inset 0 0 0 999px rgba(255,80,80,.65) } 100% { box-shadow: inset 0 0 0 999px rgba(255,80,80,0) } }
+  .cf, .cr { position:absolute; font-size:9px; font-weight:700; color:rgba(40,28,20,.55) }
+  .cf { right:3px; bottom:1px } .cr { left:3px; top:2px }
+  .board img { position:absolute; z-index:2; pointer-events:none; -webkit-user-drag:none }
+  .board img.slide { animation: slide .2s ease-out }
+  @keyframes slide { from { transform: translate(var(--dx), var(--dy)) } }
+  .dot { position:absolute; z-index:4; pointer-events:none; display:grid; place-items:center }
+  .dot::after { content:""; width:28%; height:28%; border-radius:50%; background:rgba(30,60,25,.38) }
+  .dot.cap::after { width:86%; height:86%; background:transparent; border:4px solid rgba(30,60,25,.38) }"""
+
 
 def after_tag(src, attr, insert):
     """Put `insert` just inside every opening tag that carries `attr`; the tag's other props may hold arrows (`=>`)."""
@@ -323,7 +390,7 @@ def widget(name, body):
     body = (body.replace("%%SHARED%%", SHARED)
                 .replace("%%POS%%", f"left: {x}px; top: {y}px; width: {w}px; height: {h}px;")
                 .replace("%%ZONES%%", ZONES).replace("%%PY%%", PY).replace("%%AGO%%", AGO).replace("%%SPARK%%", SPARK)
-                .replace("%%FMT%%", FMT).replace("%%HOURS%%", HOURS)
+                .replace("%%FMT%%", FMT).replace("%%HOURS%%", HOURS).replace("%%CHESS%%", CHESS).replace("%%BOARDCSS%%", BOARDCSS)
                 .replace("%%W2%%", str(w + 2)).replace("%%H2%%", str(h + 2)))
     for old, new in THEME:
         body = body.replace(old, new)
@@ -924,204 +991,292 @@ export const render = ({ output }) => {
   );
 };''')
 
-# ───────────────────────── AI & TECH WIRE ─────────────────────────
-widget("ai-wire", r'''// Top 7 tech stories ranked for a software engineer in the job market (relevance x freshness, see market.py);
-// layoff news is flagged red and pinned. Click to open.
+# ───────────────────────── CHESS PUZZLE ─────────────────────────
+widget("puzzle", r'''// Playable Lichess puzzle (daily, or a fresh one on demand; see puzzle.py). Drag or click a piece to move it.
+// The opponent answers on its own; a wrong move snaps back. Solved count and streak are remembered on this Mac.
 import { run } from "uebersicht";
-export const command = "%%PY%% ~/.stark/market.py json tech";
-export const refreshFrequency = 15 * 60 * 1000;
+export const command = "%%PY%% ~/.stark/puzzle.py";
+export const refreshFrequency = 10 * 60 * 1000;  // only picks up a new daily puzzle; moves happen locally
 export const className = `
   %%POS%%%%SHARED%%
-  .list { padding:6px 10px }
-  .row { display:flex; align-items:center; gap:12px; height:51px; padding:0 12px; border-radius:8px; cursor:pointer }
-  .row:hover { background:rgba(127,220,255,.07) } .row:hover .t { color:#fff }
-  .tag { flex:none; width:54px; text-align:center; font-size:8.5px; font-weight:800; letter-spacing:.08em; padding:2px 0; border-radius:4px }
-  .src { flex:none; width:86px; white-space:nowrap; font-size:9px; font-weight:700; letter-spacing:.08em; color:#8c8178 }
-  .t { flex:1; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; color:#e6dcd2; font-size:13px; line-height:1.38 }
-  .a { flex:none; width:30px; text-align:right; font-size:10.5px; color:#6f665f }
-  /* layoff / job-cut headlines: pure red warning row, pinned to the top */
-  .row.alert { background:rgba(255,59,48,.16); box-shadow: inset 3px 0 0 #ff3b30; animation: alertGlow 2.6s ease-in-out infinite }
-  .row.alert:hover { background:rgba(255,59,48,.26) }
-  .row.alert .t, .row.alert:hover .t { color:#ff453a; font-weight:700 }
-  .row.alert .src, .row.alert .a { color:#ff8a80 }
-  .row.alert .tag { color:#fff; background:#ff3b30 }
-  @keyframes alertGlow { 50% { background:rgba(255,59,48,.24) } }
-  .alertsub { color:#ff453a; font-weight:700; margin-right:8px }
+  .wrap { display:flex; gap:20px; padding:4px 20px 0 }
+  %%BOARDCSS%%
+  .board { width:352px; height:352px; flex:none }
+  .side { flex:1; min-width:0; display:flex; flex-direction:column }
+  .rt { font: 200 34px -apple-system, "SF Pro Display", sans-serif; line-height:1.1; color:#fff7ee; margin-top:3px }
+  .turn { display:flex; align-items:center; gap:8px; margin-top:14px; font-size:13px; color:#e6dcd2 }
+  .turn i { width:12px; height:12px; border-radius:50%; flex:none; border:1px solid rgba(255,255,255,.35) }
+  .msg { min-height:34px; margin-top:6px; font-size:11.5px; line-height:1.45; color:#8c8178 }
+  .msg.ok { color:#4ade80 } .msg.bad { color:#f87171 } .msg.win { color:#ffb35c; font-weight:600 }
+  .chips { display:flex; flex-wrap:wrap; gap:5px; margin-top:4px }
+  .chip { font-size:9.5px; padding:2px 7px; border-radius:5px; color:#b8aea4; background:rgba(255,255,255,.05); white-space:nowrap }
+  .stats { display:flex; justify-content:space-between; margin-top:auto; padding-top:10px }
+  .stats .v { font: 300 20px -apple-system, "SF Pro Display", sans-serif; color:#fff7ee }
+  .btns { display:grid; grid-template-columns: 1fr 1fr; gap:6px; margin:12px 0 14px }
+  .btn { height:28px; border-radius:8px; display:grid; place-items:center; cursor:pointer; font-size:9.5px; font-weight:700; letter-spacing:.12em;
+         color:#d9cfc6; background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.06) }
+  .btn:hover { background:rgba(255,255,255,.11); color:#fff7ee }
+  .btn.wide { grid-column: 1 / span 2 }
+  .btn.main { grid-column: 1 / span 2; color:#241b16; background:#ffb35c; border-color:transparent }
+  .btn.main:hover { background:#ffc47e; color:#241b16 }
+  .btn.busy { opacity:.5 }
+  .empty { padding:120px 20px 0; text-align:center; color:#8c8178 }
 `;
-%%AGO%%
-export const render = ({ output }) => {
-  let n = []; try { n = JSON.parse(output); } catch (e) {}
-  // market.py already ranks: layoff alerts first, then relevance to a software engineer x freshness
-  const alerts = n.filter(h => h.alert).length;
-  const TAGS = { JOBS: "#ffb35c", AI: "#7fdcff", DEV: "#c4a1ff", "BIG TECH": "#e6dcd2", STARTUPS: "#4ade80", TECH: "#8c8178" };
+%%CHESS%%
+const THEMES = { mateIn1: "Mate in 1", mateIn2: "Mate in 2", mateIn3: "Mate in 3", mateIn4: "Mate in 4", mateIn5: "Mate in 5+" };
+const hide = new Set(["short", "long", "veryLong", "oneMove", "master", "masterVsMaster", "superGM", "middlegame", "opening", "endgame", "crushing", "advantage", "equality"]);
+const theme = t => THEMES[t] || t.replace(/([A-Z])/g, " $1").replace(/^./, c => c.toUpperCase());
+const store = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || "null"); localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+const blank = { ply: 0, sel: null, msg: "", tone: "", done: false, shown: false, hint: null, end: null, missed: false };
+export const initialState = { output: "", ...blank };
+export const updateState = (ev, s) => {
+  if (ev.type === "MOVE" || ev.type === "SET") return { ...s, ...ev.set };
+  if (ev.type === "UB/COMMAND_RAN" || ev.output !== undefined) {
+    let id = null; try { id = JSON.parse(ev.output).id; } catch (e) {}
+    let was = null; try { was = JSON.parse(s.output).id; } catch (e) {}
+    if (id && id !== was) {  // new puzzle: start over, or resume where you were after a restart
+      const p = store("chess-progress"); return { ...s, ...blank, ...(p && p.id === id ? p.st : {}), output: ev.output, error: ev.error };
+    }
+    return { ...s, output: ev.output, error: ev.error };
+  }
+  return s;
+};
+const loadNew = (dispatch, what) => {
+  if (window.__pzBusy) return; window.__pzBusy = 1; dispatch({ type: "SET", set: { msg: "Loading a new puzzle…", tone: "" } });
+  run("%%PY%% ~/.stark/puzzle.py " + what).then(out => { window.__pzBusy = 0; dispatch({ type: "UB/COMMAND_RAN", output: out }); })
+    .catch(() => { window.__pzBusy = 0; dispatch({ type: "SET", set: { msg: "Couldn't reach Lichess.", tone: "bad" } }); });
+};
+export const render = (s, dispatch) => {
+  let p = null; try { p = JSON.parse(s.output); } catch (e) {}
+  if (!p || !p.fens) return <div><header><span style={{ color: "#ffb35c" }}>♞</span><h1>CHESS PUZZLE</h1></header>
+    <div className="empty">{p ? "Couldn't load a puzzle." : "Setting up the board…"}</div></div>;
+  const stats = store("chess-stats") || { solved: 0, streak: 0, best: 0, seen: [] };
+  const flip = p.color === "b", mine = s.ply % 2 === 0 && !s.done;
+  const fen = s.end || p.fens[Math.min(s.ply, p.fens.length - 1)];
+  const lm = s.ply ? (s.endMove || p.sol[s.ply - 1]) : p.last;
+  const legal = mine ? p.legal[s.ply / 2] || {} : {};
+  const set = st => { store("chess-progress", { id: p.id, st: { ply: st.ply ?? s.ply, done: st.done ?? s.done, shown: st.shown ?? s.shown,
+    missed: st.missed ?? s.missed, end: st.end ?? s.end, endMove: st.endMove ?? s.endMove } }); dispatch({ type: "SET", set: st }); };
+  const finish = (won, extra) => {
+    if (!stats.seen.includes(p.id)) {  // each puzzle counts once
+      stats.seen = [...stats.seen, p.id].slice(-200);
+      if (won) { stats.solved++; stats.streak++; stats.best = Math.max(stats.best, stats.streak); } else stats.streak = 0;
+      store("chess-stats", stats);
+    }
+    set({ done: true, sel: null, hint: null, ...extra });
+  };
+  const reply = ply => setTimeout(() => {   // the opponent answers after a beat
+    if (ply + 1 >= p.sol.length) return;
+    set({ ply: ply + 1, msg: "Best move! Keep going.", tone: "ok" }); }, 480);
+  const tryMove = (from, to) => {
+    if (!(legal[from] || []).includes(to)) return false;
+    const want = p.sol[s.ply], last = s.ply === p.sol.length - 1;
+    if (want.startsWith(from + to)) {
+      if (last) finish(!s.missed && !s.shown, { ply: s.ply + 1, msg: s.missed ? "Solved, with a slip." : "Solved! ★", tone: "win" });
+      else { set({ ply: s.ply + 1, sel: null, hint: null, msg: "", tone: "" }); reply(s.ply + 1); }
+      return true;
+    }
+    const mate = last && p.mates.find(m => m.startsWith(from + to));
+    if (mate) { finish(!s.missed && !s.shown, { ply: s.ply + 1, end: applyUci(fen, mate), endMove: mate, msg: "Checkmate! Solved ★", tone: "win" }); return true; }
+    if (!s.missed && !stats.seen.includes(p.id)) { stats.streak = 0; store("chess-stats", stats); }
+    set({ sel: null, hint: null, missed: true, msg: "Not the move. Try again.", tone: "bad", bad: to + Date.now() });
+    return true;
+  };
+  const showSolution = () => {
+    if (s.done) return; finish(false, { shown: true, msg: "Here's the solution.", tone: "" });
+    let ply = s.ply; const step = () => { if (ply >= p.sol.length) return; ply++; set({ ply, done: true, shown: true }); setTimeout(step, 700); };
+    setTimeout(step, 200);
+  };
+  const hint = () => { if (mine) set({ hint: p.sol[s.ply].slice(0, 2), sel: null, msg: "Move the highlighted piece.", tone: "" }); };
+  const tags = p.themes.filter(t => !hide.has(t)).slice(0, 4);
+  const mate = p.themes.find(t => THEMES[t]);
+  const side = flip ? "Black" : "White";
   return (
     <div>
-      <header><span style={{ color: "#7fdcff" }}>✦</span><h1>AI &amp; TECH WIRE</h1><span className="sub">{alerts > 0 && <span className="alertsub">⚠ {alerts} LAYOFF ALERT{alerts > 1 ? "S" : ""}</span>}TOP 7 · <b style={{ color: "#7fdcff" }}>RANKED FOR SOFTWARE ENGINEERS</b></span></header>
-      <div className="list">
-        {n.slice(0, 7).map(h => (
-          <div className={"row" + (h.alert ? " alert" : "")} key={h.l} onClick={() => run(`open "${h.l}"`)}>
-            {h.alert ? <span className="tag">⚠ LAYOFFS</span>
-              : <span className="tag" style={{ color: TAGS[h.tag] || "#8c8178", background: "rgba(255,255,255,.05)" }}>{h.tag || "TECH"}</span>}
-            <span className="src">{h.src.toUpperCase()}</span>
-            <span className="t">{h.t}</span><span className="a num">{ago(h.d)}</span>
-          </div>))}
+      <header><span style={{ color: "#ffb35c" }}>♞</span><h1>CHESS PUZZLE</h1>
+        <span className="sub">{p.daily ? <b>DAILY</b> : "PUZZLE"} · {mate ? theme(mate).toUpperCase() : "FIND THE BEST LINE"} · {(p.plays / 1000).toFixed(0)}K PLAYS</span></header>
+      <div className="wrap">
+        <Board fen={fen} flip={flip} size={352} lm={lm} sel={s.sel} hint={s.hint} bad={s.bad} targets={s.sel ? legal[s.sel] || [] : []}
+          movable={sq => mine && !!legal[sq]} onSelect={sq => set({ sel: sq })} onMove={tryMove} />
+        <div className="side">
+          <div className="lbl">PUZZLE RATING</div>
+          <div className="rt num">{p.rating}</div>
+          <div className="turn"><i style={{ background: flip ? "#16120f" : "#f3ece6" }} />
+            {s.done ? (s.tone === "win" ? "Puzzle solved" : "Puzzle over") : mine ? side + " to move" : "Opponent replies…"}</div>
+          <div className={"msg " + s.tone}>{s.msg || (s.done ? "" : "Find the best move for " + side.toLowerCase() + ".")}</div>
+          <div className="chips">{tags.map(t => <span className="chip" key={t}>{theme(t)}</span>)}</div>
+          <div className="stats">
+            <div><div className="lbl">SOLVED</div><div className="v num">{stats.solved}</div></div>
+            <div><div className="lbl">STREAK</div><div className="v num">{stats.streak}</div></div>
+            <div><div className="lbl">BEST</div><div className="v num">{stats.best}</div></div>
+          </div>
+          <div className="btns">
+            {s.done ? <span className="btn main" onClick={() => loadNew(dispatch, "next")}>NEXT PUZZLE ›</span>
+              : <span className="btn" onClick={hint}>HINT</span>}
+            {s.done ? <span className="btn" onClick={() => run(`open "${p.url}"`)}>LICHESS ↗</span>
+              : <span className="btn" onClick={showSolution}>SOLUTION</span>}
+            {s.done ? <span className="btn" onClick={() => loadNew(dispatch, "daily")}>DAILY</span>
+              : <span className="btn wide" onClick={() => loadNew(dispatch, "next")}>SKIP ›</span>}
+          </div>
+        </div>
       </div>
     </div>
   );
 };''')
 
-# ───────────────────────── JOB HUNT ─────────────────────────
-widget("jobs", r'''// Job hunt from the Job Tracker app (~/Developer/JobTracker): next steps, follow-ups, and what's still in play.
+# ───────────────────────── ANIME ─────────────────────────
+widget("anime", r'''// Anime from AniList (anime.py): episodes airing around now with countdowns, and what's trending this season.
+// Click a show to open it on AniList.
 import { run } from "uebersicht";
-export const command = "%%PY%% ~/.stark/jobs.py";
-export const refreshFrequency = 60 * 1000;
+export const command = "%%PY%% ~/.stark/anime.py";
+export const refreshFrequency = 60 * 1000;  // countdowns tick each minute; the script only refetches every 15 min
 export const className = `
   %%POS%%%%SHARED%%
-  .stats { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; margin:4px 18px 8px }
-  .st { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:8px 12px }
-  .st .v { font: 300 24px -apple-system, "SF Pro Display", sans-serif; line-height:1.15; color:#ffffff }
-  .st .v small { font-size:11px; color:#8c8178; margin-left:1px }
+  .hero { display:flex; gap:16px; margin:2px 20px 10px; padding:12px; border-radius:14px; cursor:pointer;
+          background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.06); position:relative; overflow:hidden }
+  .hero:hover { background:rgba(255,255,255,.06) }
+  .hero .bg { position:absolute; inset:0; opacity:.16; filter:blur(26px) saturate(140%); background-size:cover; background-position:center }
+  .hero img { width:76px; height:106px; border-radius:9px; object-fit:cover; flex:none; position:relative; box-shadow:0 8px 20px rgba(0,0,0,.4) }
+  .hero .info { position:relative; min-width:0; display:flex; flex-direction:column }
+  .hero .ttl { font-size:16px; font-weight:600; color:#fff7ee; line-height:1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; margin-top:3px }
+  .hero .ep { font-size:11.5px; color:#a39a92; margin-top:4px }
+  .cd { font: 200 28px -apple-system, "SF Pro Display", sans-serif; color:#ffb35c; margin-top:auto; line-height:1 }
+  .cd small { font-size:11px; color:#8c8178; margin-left:6px; font-weight:500 }
   .list { padding:0 10px }
-  .grp { display:flex; align-items:center; gap:8px; padding:8px 10px 3px; font-size:9px; font-weight:700; letter-spacing:.14em }
-  .grp i { flex:1; height:1px; background:rgba(255,255,255,.06) }
-  .row { display:grid; grid-template-columns: 22px 1fr auto; align-items:center; gap:10px; height:33px; padding:0 10px; border-radius:8px; cursor:pointer }
-  .row:hover { background:rgba(255,179,92,.08) }
-  .lg { width:22px; height:22px; border-radius:5px; display:grid; place-items:center; font-size:10.5px; font-weight:700; color:#fff }
+  .row { display:grid; grid-template-columns: 24px 1fr auto; align-items:center; gap:11px; height:36px; padding:0 10px; border-radius:8px; cursor:pointer }
+  .row:hover { background:rgba(255,179,92,.08) } .row:hover .nm { color:#fff7ee }
+  .row img { width:24px; height:32px; border-radius:4px; object-fit:cover }
   .nm { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12.5px; color:#e6dcd2 }
-  .nm span { font-size:10.5px; color:#857d75; margin-left:6px }
-  .tag { font-size:10px; font-weight:600; padding:2px 6px; border-radius:5px; white-space:nowrap; color:#b8aea4; background:rgba(255,255,255,.05) }
-  .tag.soon { color:#f5b14c; background:rgba(245,177,76,.1) }
-  .tag.late { color:#ff6b6b; background:rgba(255,107,107,.1) }
-  .empty { padding:46px 26px 0; text-align:center; color:#8c8178; line-height:1.6 }
-  .empty b { color:#f5b14c; font-weight:600 }
+  .nm span { font-size:10.5px; color:#857d75; margin-left:7px }
+  .when { font-size:10.5px; font-weight:600; padding:2px 7px; border-radius:5px; white-space:nowrap; color:#b8aea4; background:rgba(255,255,255,.05) }
+  .when.soon { color:#ffb35c; background:rgba(255,179,92,.1) }
+  .when.out { color:#4ade80; background:rgba(74,222,128,.1) }
+  .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; padding:2px 20px }
+  .card { position:relative; height:176px; border-radius:11px; overflow:hidden; cursor:pointer; background:#1d1814 }
+  .card img { width:100%; height:100%; object-fit:cover; transition: transform .3s }
+  .card:hover img { transform: scale(1.05) }
+  .card .ov { position:absolute; left:0; right:0; bottom:0; padding:28px 9px 8px; background:linear-gradient(transparent, rgba(10,8,6,.92)) }
+  .card .ct { font-size:11.5px; font-weight:600; color:#fff7ee; line-height:1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+  .card .cn { font-size:9.5px; color:#a39a92; margin-top:3px }
+  .card .sc { position:absolute; top:7px; right:7px; font-size:10px; font-weight:700; padding:2px 6px; border-radius:5px; color:#241b16; background:#ffb35c }
+  .card .rk { position:absolute; top:5px; left:8px; font: 700 16px -apple-system, sans-serif; color:#fff7ee }
+  .empty { padding:120px 20px 0; text-align:center; color:#8c8178 }
+  .seg { display:inline-flex; gap:2px; padding:2px; border-radius:7px; background:rgba(0,0,0,.18); vertical-align:middle }
+  .seg span { padding:2px 7px; border-radius:5px; font-size:8.5px; font-weight:700; letter-spacing:.12em; color:#8c8178; cursor:pointer }
+  .seg span:hover { color:#e6dcd2 } .seg .on { background:rgba(255,255,255,.08); color:#fff7ee }
 `;
-const STATUS = { applied: ["Applied", "#7cc8ff"], interview: ["Interview", "#f5b14c"], offer: ["Offer", "#4fd18b"] };
-const TINTS = ["#8a6a4f", "#5f7a8c", "#6d7f5a", "#8c5f6a", "#6a6390", "#7f7356"];
-const tint = s => { let h = 0; for (const c of (s || "").toLowerCase()) h = (h * 31 + c.charCodeAt(0)) >>> 0; return TINTS[h % TINTS.length]; };
-const due = (d, left) => left < 0 ? -left + "d late" : left === 0 ? "Today" : left === 1 ? "Tmrw"
-  : new Date(d + "T00:00").toLocaleDateString("en-GB", left < 7 ? { weekday: "short" } : { day: "numeric", month: "short" });
-const open = () => run(`open -a "Job Tracker"`);
-export const render = ({ output }) => {
-  let j = null; try { j = JSON.parse(output); } catch (e) {}
-  const c = (j && j.counts) || {}, ev = (j && j.events) || [];
-  // 8 rows fit under the stats: up to 4 next steps, up to 3 follow-ups, the rest filled with what's in play
-  const seen = new Set(), groups = []; let room = 8;
-  const add = (label, color, items, max, row) => { const take = items.filter(x => !seen.has(x.id)).slice(0, Math.min(max, room));
-    if (!take.length) return; take.forEach(x => seen.add(x.id)); room -= take.length; groups.push([label, color, take.map(row)]); };
-  add("◷ NEXT UP", "#f5b14c", ev, 4, e => [e, e.next + " · " + due(e.date, e.left), e.left < 0 ? "late" : e.left <= 3 ? "soon" : ""]);
-  add("⚑ FOLLOW UP", "#ff9f6b", (j && j.followups) || [], 3, f => [f, f.days + "d no reply", "late"]);
-  if (groups.length > 1) room = Math.min(room, 8 - groups.length);  // each extra heading costs about a row
-  add("● IN PLAY", "#7cc8ff", (j && j.active) || [], 8, a => [a, STATUS[a.status][0] + (a.days != null ? " · " + (a.days ? a.days + "d" : "today") : ""), ""]);
-  const first = ev[0];
+const savedTab = () => { try { return localStorage.getItem("anime-tab") || "AIRING"; } catch (e) { return "AIRING"; } };
+export const initialState = { output: "", tab: savedTab() };
+export const updateState = (ev, s) => ev.type === "TAB" ? { ...s, tab: ev.tab } : { ...s, output: ev.output, error: ev.error };
+const left = at => at - Date.now() / 1000;
+const span = sec => { const m = Math.round(Math.abs(sec) / 60);
+  return m < 60 ? m + "m" : m < 1440 ? Math.floor(m / 60) + "h " + String(m % 60).padStart(2, "0") + "m" : Math.round(m / 1440) + "d"; };
+const clock = at => new Date(at * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+const day = at => { const d = new Date(at * 1000), t = new Date(); return d.toDateString() === t.toDateString() ? "Today"
+  : d.toDateString() === new Date(+t + 864e5).toDateString() ? "Tomorrow" : d.toLocaleDateString("en-GB", { weekday: "short" }); };
+const open = u => run(`open "${u}"`);
+export const render = ({ output, tab }, dispatch) => {
+  let a = null; try { a = JSON.parse(output); } catch (e) {}
+  const pick = t => { try { localStorage.setItem("anime-tab", t); } catch (e) {} dispatch({ type: "TAB", tab: t }); };
+  const air = (a && a.air) || [], soon = air.filter(x => left(x.at) > 0), out = air.filter(x => left(x.at) <= 0);
+  // the hero is the most-followed show still to air in the next 24 h (else the next one at all)
+  const near = soon.filter(x => left(x.at) < 24 * 3600), hero = near.length ? near.reduce((b, x) => x.fans > b.fans ? x : b) : soon[0];
+  // then what's next, with the biggest shows that just came out mixed in
+  const rows = [...soon.filter(x => x !== hero).slice(0, 4), ...out.sort((x, y) => y.fans - x.fans).slice(0, 2)].sort((x, y) => x.at - y.at).slice(0, 6);
+  const sub = soon.filter(x => left(x.at) < 86400).length;
   return (
     <div>
-      <header><span style={{ color: "#f5b14c" }}>◆</span><h1>JOB HUNT</h1>
-        <span className="sub"><b>{c.applied || 0}</b> AWAITING{first ? " · " + (first.next + " " + due(first.date, first.left)).toUpperCase() : ""}</span></header>
-      {!j ? <div className="empty">Reading Job Tracker…</div>
-        : !j.apps ? <div className="empty">Add applications in <b>Job Tracker</b> and they'll show up here.</div>
+      <header><span style={{ color: "#ffb35c" }}>✦</span><h1>ANIME</h1>
+        <span className="sub"><span className="seg">{["AIRING", "TRENDING"].map(t =>
+          <span key={t} className={tab === t ? "on" : ""} onClick={() => pick(t)}>{t}</span>)}</span>
+          {tab === "AIRING" && <span> · <b>{sub}</b> IN NEXT 24H</span>}</span></header>
+      {!a ? <div className="empty">Checking the schedule…</div>
+        : tab === "TRENDING" ? <div className="grid">
+          {(a.hot || []).slice(0, 8).map((x, i) => <div className="card" key={x.id} onClick={() => open(x.url)}>
+            <img src={x.cover} alt="" /><span className="rk">{i + 1}</span>{x.score && <span className="sc">{x.score}%</span>}
+            <div className="ov"><div className="ct">{x.title}</div>
+              <div className="cn">{x.next ? "EP " + x.next.episode + " in " + span(left(x.next.airingAt)) : (x.genres || []).slice(0, 2).join(" · ")}</div></div>
+          </div>)}</div>
         : <div>
-        <div className="stats">
-          {[["SENT", j.sent], ["INTERVIEW", c.interview || 0], ["OFFERS", c.offer || 0], ["REPLIES", j.rate, "%"]].map(([l, v, u]) =>
-            <div className="st" key={l}><div className="lbl">{l}</div><div className="v num">{v}{u && <small>{u}</small>}</div></div>)}
-        </div>
-        <div className="list">
-          {groups.map(([label, color, rows]) => <div key={label}>
-            <div className="grp" style={{ color }}>{label}<i /></div>
-            {rows.map(([x, tag, cls]) => (
-              <div className="row" key={label + x.id} onClick={open}>
-                <span className="lg" style={{ background: tint(x.company) }}>{(x.company.trim()[0] || "?").toUpperCase()}</span>
-                <span className="nm">{x.company}<span>{x.role}</span></span>
-                <span className={"tag " + cls}>{tag}</span>
-              </div>))}
-          </div>)}
-        </div></div>}
+          {hero && <div className="hero" onClick={() => open(hero.url)}>
+            <div className="bg" style={{ backgroundImage: `url(${hero.cover})` }} />
+            <img src={hero.cover} alt="" />
+            <div className="info">
+              <div className="lbl" style={{ color: "#ffb35c" }}>NEXT UP</div>
+              <div className="ttl">{hero.title}</div>
+              <div className="ep">Episode {hero.ep}{hero.eps ? " of " + hero.eps : ""} · {day(hero.at)} {clock(hero.at)}{hero.score ? " · ★ " + hero.score + "%" : ""}</div>
+              <div className="cd num">{span(left(hero.at))}<small>TO GO</small></div>
+            </div></div>}
+          <div className="list">
+            {rows.map(x => { const t = left(x.at);
+              return <div className="row" key={x.id + "-" + x.ep} onClick={() => open(x.url)}>
+                <img src={x.cover} alt="" />
+                <span className="nm">{x.title}<span>EP {x.ep}</span></span>
+                <span className={"when" + (t <= 0 ? " out" : t < 3 * 3600 ? " soon" : "")}>{t <= 0 ? "Out " + span(t) + " ago" : day(x.at) + " " + clock(x.at)}</span>
+              </div>; })}
+          </div></div>}
     </div>
   );
 };''')
 
-# ───────────────────────── MAIL ─────────────────────────
-widget("mail", r'''// Unread email: Gmail's Primary tab + iCloud inbox as is (see mail.sh / mail_direct.py). Click to open in Mail.
+# ───────────────────────── LICHESS TV ─────────────────────────
+widget("chesstv", r'''// Lichess TV: the top-rated game being played right now, live. Click the board to watch it on Lichess.
 import { run } from "uebersicht";
-export const command = "~/.stark/mail.sh";
-export const refreshFrequency = 30 * 1000;
+export const command = "/usr/bin/curl -sN --max-time 3 https://lichess.org/api/tv/feed | head -n 2 | paste -sd, - | sed 's/^/[/;s/$/]/'";
+export const refreshFrequency = 3000;
 export const className = `
   %%POS%%%%SHARED%%
-  .list { padding:4px 10px }
-  .it { display:grid; grid-template-columns: 8px 1fr auto; column-gap:10px; align-items:center; height:46px; padding:0 10px; border-radius:9px; cursor:pointer }
-  .it:hover { background:rgba(255,179,92,.08) }
-  .dot { width:7px; height:7px; border-radius:50%; grid-row: 1 / span 2 }
-  .from { font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:#e6dcd2 }
-  .subj { grid-column: 2 / span 2; font-size:11.5px; color:#8c8178; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px }
-  .unread .from { font-weight:700; color:#fff7ee } .unread .subj { color:#d9cfc6 }
-  .t { font-size:10px; color:#6f665f; display:flex; align-items:center; gap:6px }
-  .acc { font-size:8.5px; font-weight:700; letter-spacing:.08em; padding:1px 5px; border-radius:4px }
-  .empty { padding:78px 20px 0; text-align:center; color:#8c8178; line-height:1.6 }
-  .hint { position:absolute; left:0; right:0; bottom:14px; text-align:center; font-size:10px; color:#6f665f }
-  .hint b { color:#f87171; font-weight:600 }
-  .empty b { color:#ffb35c; font-weight:600 }
-  .sec { display:flex; align-items:center; gap:7px; padding:7px 9px 3px; font-size:9.5px; font-weight:700; letter-spacing:.12em }
-  .sec .line { flex:1; height:1px; background:rgba(255,255,255,.07) }
-  .sec .n { color:#8c8178; font-weight:600; letter-spacing:.06em }
-  .none { padding:6px 9px 8px; font-size:11px; color:#6f665f }
-  .tabs { display:flex; gap:4px; margin:0 14px 2px; padding:3px; border-radius:9px; background:rgba(0,0,0,.18) }
-  .tab { flex:1; display:flex; justify-content:center; align-items:center; gap:6px; height:22px; border-radius:6px; cursor:pointer;
-         font-size:9.5px; font-weight:700; letter-spacing:.1em; color:#8c8178 }
-  .tab:hover { color:#e6dcd2 } .tab.on { background:rgba(255,255,255,.08); color:#fff7ee }
-  .tab i { font-style:normal; font-weight:600; color:#6f665f } .tab.on i { color:#ffb35c }
+  .wrap { display:flex; gap:16px; padding:2px 18px 0 }
+  %%BOARDCSS%%
+  .board { width:248px; height:248px; flex:none; cursor:pointer }
+  .side { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:space-between; padding:2px 0 }
+  .pl .nm { font-size:12.5px; color:#e6dcd2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:3px }
+  .pl .ti { font-size:9px; font-weight:800; color:#ffb35c; margin-right:5px }
+  .pl .rt { font-size:10.5px; color:#857d75; margin-top:1px }
+  .clk { display:inline-block; margin-top:6px; padding:3px 8px; border-radius:6px; font: 500 15px -apple-system, sans-serif;
+         color:#a39a92; background:rgba(255,255,255,.05) }
+  .clk.run { color:#241b16; background:#ffb35c }
+  .clk.low.run { background:#f87171 }
+  .live { display:flex; align-items:center; gap:7px; font-size:9px; font-weight:700; letter-spacing:.16em; color:#f87171 }
+  .live i { width:7px; height:7px; border-radius:50%; background:#f87171; animation: lv 1.6s ease-in-out infinite }
+  @keyframes lv { 50% { opacity:.3 } }
+  .empty { padding:110px 20px 0; text-align:center; color:#8c8178 }
 `;
-// Account picker (Gmail / iCloud) — kept in widget state and remembered across restarts.
-const savedPick = () => { try { return localStorage.getItem("mail-pick") || "Gmail"; } catch (e) { return "Gmail"; } };
-export const initialState = { output: "", pick: savedPick() };
-export const updateState = (ev, prev) => ev.type === "PICK" ? { ...prev, pick: ev.pick } : { ...prev, output: ev.output, error: ev.error };
-// iCloud only depends on the Mail app until its app password is in the Keychain (then mail_direct.py reads it)
-const viaApp = m => !(m.direct || []).includes("iCloud");
-const problem = m => { const e = m.errors || {}, late = m.icloud_synced ? Date.now() / 1000 - m.icloud_synced : 0;
-  return e.Gmail ? "Gmail not syncing" : e.iCloud ? "iCloud not syncing"
-    : viaApp(m) && m.mail_app === false && m.running ? "Mail closed · iCloud paused"
-    : viaApp(m) && m.mail_app && late > 25 * 60 ? "iCloud late " + Math.round(late / 60) + "m" : null; };
-const ACC = a => /gmail|google/i.test(a) ? ["GMAIL", "#f87171", "rgba(248,113,113,.12)"] : /icloud/i.test(a) ? ["ICLOUD", "#7fdcff", "rgba(127,220,255,.1)"] : [a.toUpperCase().slice(0, 8), "#ffb35c", "rgba(255,179,92,.1)"];
-const name = f => (f || "").replace(/\s*<.*>\s*$/, "").replace(/^"|"$/g, "") || f;
-const when = d => { const t = new Date(d), now = new Date();
-  return t.toDateString() === now.toDateString() ? t.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
-    : (now - t) < 6 * 864e5 ? t.toLocaleDateString("en-GB", { weekday: "short" }) : t.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
-export const render = ({ output, pick }, dispatch) => {
-  let m = null; try { m = JSON.parse(output); } catch (e) {}
-  const choose = p => { try { localStorage.setItem("mail-pick", p); } catch (e) {} dispatch({ type: "PICK", pick: p }); };
-  const mail = m ? m.mail.filter(x => !x.read).sort((a, b) => new Date(b.d) - new Date(a.d)) : [];
-  const accs = m ? m.accounts || [] : [];
-  const unread = m ? m.unread || 0 : 0;
-  const shown = accs.includes(pick) ? [pick] : accs.slice(0, 1);
+%%CHESS%%
+const fmtClk = s => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
+// the running clock ticks locally between refreshes
+clearInterval(window.__tvTick); window.__tvTick = setInterval(() => document.querySelectorAll(".clk.run[data-s]").forEach(el => {
+  el.textContent = fmtClk(+el.dataset.s - (Date.now() - +el.dataset.t) / 1000); }), 1000);
+export const render = ({ output }) => {
+  let f = []; try { f = JSON.parse(output); } catch (e) {}
+  const feat = f.find(x => x.t === "featured"), mv = [...f].reverse().find(x => x.t === "fen");
+  if (!feat) return <div><header><span style={{ color: "#ffb35c" }}>♟</span><h1>LICHESS TV</h1></header><div className="empty">Tuning in…</div></div>;
+  const g = feat.d, fen = mv ? mv.d.fen : g.fen, flip = g.orientation === "black", turn = fen.split(" ")[1];
+  const P = c => { const p = g.players.find(x => x.color === c), sec = mv ? (c === "white" ? mv.d.wc : mv.d.bc) : p.seconds;
+    return { ...p, sec, run: turn === c[0] }; };
+  const [top, bot] = flip ? [P("white"), P("black")] : [P("black"), P("white")];
+  const now = Date.now();
+  const Pl = ({ p }) => <div className="pl">
+    <div className="nm">{p.user.title && <span className="ti">{p.user.title}</span>}{p.user.name}</div>
+    <div className="rt num">{p.rating}</div>
+    <span className={"clk num" + (p.run ? " run" : "") + (p.sec < 20 ? " low" : "")} data-s={p.sec} data-t={now}>{fmtClk(p.sec)}</span></div>;
   return (
     <div>
-      <header><span style={{ color: "#ffb35c" }}>✉</span><h1>MAIL</h1>
-        <span className="sub"><b>{unread}{m && m.more ? "+" : ""}</b> UNREAD</span></header>
-      {!m ? <div className="empty">Checking Mail…</div>
-        : !m.running ? <div className="empty">Open the <b>Mail</b> app to see your latest emails here.</div>
-        : <div>
-        {accs.length > 1 && <div className="tabs">
-          {accs.map(p => <span key={p} className={"tab" + (shown[0] === p ? " on" : "")} onClick={() => choose(p)}>
-            {ACC(p)[0]}<i>{(m.counts || {})[p] ?? 0}</i></span>)}
-        </div>}
-        <div className="list">
-          {shown.map(a => { const [tag, c, bg] = ACC(a), items = mail.filter(x => x.acc === a), n = (m.counts || {})[a] ?? items.length;
-            return <div key={a}>
-              <div className="sec"><span className="acc" style={{ color: c, background: bg }}>{tag}</span>
-                <span className="n">{n} UNREAD</span><span className="line" /></div>
-              {(m.errors || {})[a] ? <div className="none" style={{ color: "#ff6b6b" }}>⚠ Can't reach {a} right now. Retrying every 30 s.</div>
-                : !items.length ? <div className="none">✓ {a === "Gmail" ? "Nothing new in Primary" : "No unread email"}</div>
-                : items.slice(0, 5).map(x => (
-                <div className={"it" + (x.read ? "" : " unread")} key={x.id + x.acc}
-                     onClick={() => run(`open "message://%3c${encodeURIComponent(x.id)}%3e"`)}>
-                  <span className="dot" style={{ background: x.read ? "transparent" : c, boxShadow: x.read ? "none" : `0 0 6px ${c}` }} />
-                  <span className="from">{name(x.from)}</span>
-                  <span className="t num">{when(x.d)}</span>
-                  <span className="subj">{x.subj || "(no subject)"}</span>
-                </div>))}
-            </div>; })}
-        </div></div>}
+      <header><span style={{ color: "#ffb35c" }}>♟</span><h1>LICHESS TV</h1>
+        <span className="sub">TOP RATED · <b>{Math.round((top.rating + bot.rating) / 2)}</b> AVG</span></header>
+      <div className="wrap">
+        <div onClick={() => run(`open "https://lichess.org/${g.id}"`)}>
+          <Board fen={fen} flip={flip} size={248} lm={mv ? mv.d.lm : null} coords={false} /></div>
+        <div className="side">
+          <Pl p={top} />
+          <div className="live"><i />LIVE</div>
+          <Pl p={bot} />
+        </div>
+      </div>
     </div>
   );
 };''')
+
 
 # ───────────────────────── CONNECTORS between panels ─────────────────────────
 links = []
@@ -1133,7 +1288,7 @@ def v(x, y1, y2):
     links.append(f'<path className="flow" d="M {x} {y1} V {y2}" /><circle cx="{x}" cy="{y1}" r="2.5" /><circle cx="{x}" cy="{y2}" r="2.5" />')
 for x in (L + 90, L + 310):                                             # left stack
     v(x, 286, 306); v(x, 626, 646)
-for x in (C + 140, C + 426): v(x, 484, 504)                             # news ↔ job hunt
+for x in (C + 140, C + 426): v(x, 484, 504)                             # puzzle ↔ anime
 for x in (R + 90, R + 310):                                             # right stack
     v(x, 332, 352); v(x, 682, 702)
 h(432, 452, 171); h(432, 452, 466); h(432, 452, 789)                    # left column ↔ centre
@@ -1397,9 +1552,9 @@ const installMonkey = () => {
   const troop = Array.from({ length: MONKEYS }, (_, i) => monkey(i));
   window.__monkeyNow = async () => { for (const go of troop) { const p = go(); if (await Promise.race([p, Promise.resolve("running")]) === "running") return "sent"; } return "all out"; };
 };
-const PAIRS = [["clock", "weather"], ["weather", "system"], ["ai-wire", "jobs"], ["batcave", "mail"], ["mail", "connections"],
-  ["clock", "ai-wire"], ["weather", "ai-wire"], ["system", "jobs"], ["ai-wire", "batcave"], ["ai-wire", "mail"],
-  ["jobs", "mail"], ["jobs", "connections"]];
+const PAIRS = [["clock", "weather"], ["weather", "system"], ["puzzle", "anime"], ["batcave", "chesstv"], ["chesstv", "connections"],
+  ["clock", "puzzle"], ["weather", "puzzle"], ["system", "anime"], ["puzzle", "batcave"], ["puzzle", "chesstv"],
+  ["anime", "chesstv"], ["anime", "connections"]];
 const LAYOUT_VERSION = "3";  // clears positions saved back when panels could be rearranged
 const installLinks = () => {
   if (window.__hudLinks === "%%BUILD%%") return; window.__hudLinks = "%%BUILD%%";

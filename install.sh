@@ -8,9 +8,10 @@ command -v brew >/dev/null || { print "Install Homebrew first: https://brew.sh";
 
 [[ -d "/Applications/Übersicht.app" ]] || brew install --cask ubersicht
 mkdir -p "$HOME/Library/Application Support/Übersicht/widgets"
+python3 -m pip install --user -q chess  # puzzle.py
 python3 $DIR/build_widgets.py
 
-# Background agents: mail auto-sync (every 10 min + network changes) and the HUD pointer hider
+# Background agent: the HUD pointer hider
 for f in $DIR/launchd/*.plist; do
   label=${${f:t}%.plist}; dest=~/Library/LaunchAgents/${f:t}
   sed "s|__HOME__|$HOME|g" $f > $dest
