@@ -23,5 +23,7 @@ portfolio.json
 .nse-*
 .tor/
 .vpn*
-.anime.json
 .chess.json
+.picks-meta.json
+.picks-meta.json.lock
+.picks-state.json

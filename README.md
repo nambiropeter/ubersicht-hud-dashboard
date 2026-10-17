@@ -1,6 +1,6 @@
 # Desktop Dashboard
 
-A macOS desktop dashboard built on [Übersicht](https://tracesof.net/uebersicht/), with a playable chess puzzle, live Lichess TV, an anime airing schedule, weather, git projects, system stats and network connections, plus a matching terminal theme.
+A macOS desktop dashboard built on [Übersicht](https://tracesof.net/uebersicht/), with a playable chess puzzle, live Lichess TV, movie and show picks, weather, git projects, system stats and network connections, plus a matching terminal theme.
 
 Everything is plain scripts: no API keys, no paid services, no AI calls.
 
@@ -18,10 +18,10 @@ Everything is plain scripts: no API keys, no paid services, no AI calls.
 | Weather | Nairobi now + 5-day forecast | [Open-Meteo](https://open-meteo.com) | 15 min |
 | System | CPU, memory, disk, battery | `top`, `memory_pressure`, `df`, `pmset` | 10 s |
 | Connections | Live health of 8 services around a HUB, throughput, Wi‑Fi / VPN / speed test | Python sockets, `netstat`, CoreWLAN, `networkQuality` | 30 s |
-| Chess Puzzle | Playable daily puzzle (or a fresh one), hints, solution, streak | [Lichess](https://lichess.org) API | on demand |
+| Chess Puzzle | Playable daily puzzle (or a fresh one), hints, solution, streak; optional Lichess login for rated puzzles | [Lichess](https://lichess.org) API | on demand |
 | Batcave | Git projects in `~/Documents/GitHub` and `~/Developer` | `git` | 1 min |
 | Lichess TV | The top-rated game being played right now, live | Lichess TV feed | 3 s |
-| Anime | Episodes airing around now with countdowns, trending this season | [AniList](https://anilist.co) GraphQL | 15 min |
+| Watch | A daily movie/show pick for your taste, more picks, DC/Marvel release countdowns and new episodes | Wikipedia + Wikidata, [TVmaze](https://www.tvmaze.com/api) | 30 min |
 
 ### What each widget looks like
 
@@ -30,7 +30,7 @@ Everything is plain scripts: no API keys, no paid services, no AI calls.
 | ![Clock](docs/clock.png) **Clock**: local time and date with New York, London and Tokyo world clocks (hover one to put it on the big display). | ![Weather](docs/weather.png) **Weather**: current conditions, feels‑like, humidity, wind, UV, sunrise/sunset and a 5‑day forecast with rain chance bars. |
 | ![System](docs/system.png) **System**: CPU, memory, disk and battery rings that turn amber above 65% and red above 85% (battery red under 20%, ⚡ while charging), and a fan that spins faster as the combined load rises (CPU counts most, then memory, battery drain and disk), from a lazy turn at idle to a blur flat out. Plus uptime, process count and free disk. | ![Connections](docs/connections-healthy.png) **Connections**: live health of 8 services around a HUB, plus download and upload speed. See [Connections widget](#connections-widget) for every state. |
 | ![Batcave](docs/batcave.png) **Batcave**: your git projects, most recently committed first, with branch, uncommitted changes (✎) and the age of the last commit. Click one to open it in VS Code. | ![Lichess TV](docs/chesstv.png) **Lichess TV**: the top-rated game on Lichess right now, move by move, with live clocks. Click the board to watch it on Lichess. |
-| ![Chess Puzzle](docs/puzzle.png) **Chess Puzzle**: Lichess's daily puzzle, playable on the desktop. Drag or click pieces (legal moves are dotted); the opponent replies by itself, a wrong move snaps back. Hint, solution, skip, and a solved count with streak. | ![Anime](docs/anime.png) **Anime**: the next big episode with a countdown, what aired in the last few hours and what's coming up, plus a TRENDING tab of this season's top shows. Click a show to open it on AniList. |
+| ![Chess Puzzle](docs/puzzle.png) **Chess Puzzle**: Lichess's daily puzzle, playable on the desktop. Drag or click pieces (legal moves are dotted); the opponent replies by itself, a wrong move snaps back. Hint, solution, skip, and a solved count with streak. Click **Connect your Lichess account** to use a puzzle-only token (kept in the Keychain): puzzles then match your rating and count toward it on Lichess. | ![Watch](docs/watch.png) **Watch**: tonight's pick from a hand-made list (Batman, Marvel, AI & tech, money & markets, mind-bending sci-fi) with a trailer button; *Seen it* / *Not for me* drop it for good. COMING UP counts down to DC / Marvel releases and new episodes. Edit `PICKS` in `picks.py` to change the list. |
 
 Each data panel shows a red badge in its header if its data fails or stops updating (for example *No internet*).
 Screenshots use placeholder projects; everything else is live data.
@@ -105,7 +105,7 @@ All widgets are generated from **`build_widgets.py`**, so edit it and run `pytho
 ```
 build_widgets.py   generates all Übersicht widgets
 puzzle.py          Lichess puzzle + every position and legal move along it (needs `pip3 install chess`)
-anime.py           AniList airing schedule + trending anime
+picks.py           movie & show picks: Wikipedia/Wikidata details, TVmaze episodes
 weather.sh         Open-Meteo forecast
 system.sh          CPU / memory / disk / battery
 network.sh         IP, throughput, service latency, Wi-Fi / VPN / public IP

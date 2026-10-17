@@ -18,7 +18,7 @@ L, C, R = 32, 452, 1038
 DY = -36  # Übersicht's canvas starts below the menu bar
 POS = {
     "clock":   (L, 56, 400, 230),  "puzzle":  (C, 56, 566, 428),   "batcave":     (R, 56, 400, 276),
-    "weather": (L, 306, 400, 320), "anime":   (C, 504, 566, 428),  "chesstv":     (R, 352, 400, 330),
+    "weather": (L, 306, 400, 320), "watch":   (C, 504, 566, 428),  "chesstv":     (R, 352, 400, 330),
     "system":  (L, 646, 400, 286),                                 "connections": (R, 702, 400, 230),
 }
 
@@ -306,7 +306,7 @@ WARM = [
 # itself (Übersicht's WebKit ignores image cursors; CSS can't be trusted to draw it).
 CURSOR = "none"
 
-NET = {"weather", "puzzle", "anime", "chesstv", "connections"}  # panels that need the internet
+NET = {"weather", "puzzle", "watch", "chesstv", "connections"}  # panels that need the internet
 
 # Chess board shared by the puzzle and Lichess TV panels (pieces: Lichess cburnett set, downloaded by puzzle.py)
 CHESS = r"""const FILES = "abcdefgh";
@@ -1021,6 +1021,8 @@ export const className = `
   .btn.main:hover { background:#ffc47e; color:#241b16 }
   .btn.busy { opacity:.5 }
   .empty { padding:120px 20px 0; text-align:center; color:#8c8178 }
+  .conn { margin-top:12px; font-size:11px; color:#ffb35c; cursor:pointer } .conn:hover { color:#ffc47e }
+  .diff { font-size:11px; font-weight:600; margin-left:4px }
 `;
 %%CHESS%%
 const THEMES = { mateIn1: "Mate in 1", mateIn2: "Mate in 2", mateIn3: "Mate in 3", mateIn4: "Mate in 4", mateIn5: "Mate in 5+" };
@@ -1060,6 +1062,7 @@ export const render = (s, dispatch) => {
   const finish = (won, extra) => {
     if (!stats.seen.includes(p.id)) {  // each puzzle counts once
       stats.seen = [...stats.seen, p.id].slice(-200);
+      if (p.me) run(`%%PY%% ~/.stark/puzzle.py result ${p.id} ${won ? 1 : 0}`).then(out => dispatch({ type: "UB/COMMAND_RAN", output: out })).catch(() => {});
       if (won) { stats.solved++; stats.streak++; stats.best = Math.max(stats.best, stats.streak); } else stats.streak = 0;
       store("chess-stats", stats);
     }
@@ -1094,7 +1097,7 @@ export const render = (s, dispatch) => {
   return (
     <div>
       <header><span style={{ color: "#ffb35c" }}>♞</span><h1>CHESS PUZZLE</h1>
-        <span className="sub">{p.daily ? <b>DAILY</b> : "PUZZLE"} · {mate ? theme(mate).toUpperCase() : "FIND THE BEST LINE"} · {(p.plays / 1000).toFixed(0)}K PLAYS</span></header>
+        <span className="sub">{p.me && <span>{p.me.name.toUpperCase()} · </span>}{p.daily ? <b>DAILY</b> : "PUZZLE"} · {mate ? theme(mate).toUpperCase() : "FIND THE BEST LINE"} · {(p.plays / 1000).toFixed(0)}K PLAYS</span></header>
       <div className="wrap">
         <Board fen={fen} flip={flip} size={352} lm={lm} sel={s.sel} hint={s.hint} bad={s.bad} targets={s.sel ? legal[s.sel] || [] : []}
           movable={sq => mine && !!legal[sq]} onSelect={sq => set({ sel: sq })} onMove={tryMove} />
@@ -1105,8 +1108,12 @@ export const render = (s, dispatch) => {
             {s.done ? (s.tone === "win" ? "Puzzle solved" : "Puzzle over") : mine ? side + " to move" : "Opponent replies…"}</div>
           <div className={"msg " + s.tone}>{s.msg || (s.done ? "" : "Find the best move for " + side.toLowerCase() + ".")}</div>
           <div className="chips">{tags.map(t => <span className="chip" key={t}>{theme(t)}</span>)}</div>
+          {!p.me && <div className="conn" onClick={() => run("%%PY%% ~/.stark/puzzle.py login").then(out => dispatch({ type: "UB/COMMAND_RAN", output: out }))}>
+            ⚡ Connect your Lichess account ›</div>}
           <div className="stats">
-            <div><div className="lbl">SOLVED</div><div className="v num">{stats.solved}</div></div>
+            {p.me ? <div title={"Lichess puzzle rating of " + p.me.name}><div className="lbl">YOU</div><div className="v num">{p.me.rating ?? "—"}{p.me.prov ? "?" : ""}
+              {p.result && p.result.diff != null && <span className={"diff " + (p.result.diff >= 0 ? "up" : "dn")}>{p.result.diff >= 0 ? "+" : ""}{p.result.diff}</span>}</div></div>
+              : <div><div className="lbl">SOLVED</div><div className="v num">{stats.solved}</div></div>}
             <div><div className="lbl">STREAK</div><div className="v num">{stats.streak}</div></div>
             <div><div className="lbl">BEST</div><div className="v num">{stats.best}</div></div>
           </div>
@@ -1124,100 +1131,117 @@ export const render = (s, dispatch) => {
   );
 };''')
 
-# ───────────────────────── ANIME ─────────────────────────
-widget("anime", r'''// Anime from AniList (anime.py): episodes airing around now with countdowns, and what's trending this season.
-// Click a show to open it on AniList.
+# ───────────────────────── WATCH ─────────────────────────
+widget("watch", r'''// Movies & shows picked for your taste (picks.py): today's pick with a trailer, more picks, and what's coming up
+// (DC / Marvel films with countdowns, new episodes of the shows on the list). Seen / not-for-me never come back.
 import { run } from "uebersicht";
-export const command = "%%PY%% ~/.stark/anime.py";
-export const refreshFrequency = 60 * 1000;  // countdowns tick each minute; the script only refetches every 15 min
+export const command = "%%PY%% ~/.stark/picks.py";
+export const refreshFrequency = 30 * 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
-  .hero { display:flex; gap:16px; margin:2px 20px 10px; padding:12px; border-radius:14px; cursor:pointer;
-          background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.06); position:relative; overflow:hidden }
-  .hero:hover { background:rgba(255,255,255,.06) }
-  .hero .bg { position:absolute; inset:0; opacity:.16; filter:blur(26px) saturate(140%); background-size:cover; background-position:center }
-  .hero img { width:76px; height:106px; border-radius:9px; object-fit:cover; flex:none; position:relative; box-shadow:0 8px 20px rgba(0,0,0,.4) }
-  .hero .info { position:relative; min-width:0; display:flex; flex-direction:column }
-  .hero .ttl { font-size:16px; font-weight:600; color:#fff7ee; line-height:1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; margin-top:3px }
-  .hero .ep { font-size:11.5px; color:#a39a92; margin-top:4px }
-  .cd { font: 200 28px -apple-system, "SF Pro Display", sans-serif; color:#ffb35c; margin-top:auto; line-height:1 }
-  .cd small { font-size:11px; color:#8c8178; margin-left:6px; font-weight:500 }
-  .list { padding:0 10px }
-  .row { display:grid; grid-template-columns: 24px 1fr auto; align-items:center; gap:11px; height:36px; padding:0 10px; border-radius:8px; cursor:pointer }
-  .row:hover { background:rgba(255,179,92,.08) } .row:hover .nm { color:#fff7ee }
-  .row img { width:24px; height:32px; border-radius:4px; object-fit:cover }
-  .nm { min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12.5px; color:#e6dcd2 }
-  .nm span { font-size:10.5px; color:#857d75; margin-left:7px }
-  .when { font-size:10.5px; font-weight:600; padding:2px 7px; border-radius:5px; white-space:nowrap; color:#b8aea4; background:rgba(255,255,255,.05) }
-  .when.soon { color:#ffb35c; background:rgba(255,179,92,.1) }
-  .when.out { color:#4ade80; background:rgba(74,222,128,.1) }
-  .grid { display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; padding:2px 20px }
-  .card { position:relative; height:176px; border-radius:11px; overflow:hidden; cursor:pointer; background:#1d1814 }
-  .card img { width:100%; height:100%; object-fit:cover; transition: transform .3s }
-  .card:hover img { transform: scale(1.05) }
-  .card .ov { position:absolute; left:0; right:0; bottom:0; padding:28px 9px 8px; background:linear-gradient(transparent, rgba(10,8,6,.92)) }
-  .card .ct { font-size:11.5px; font-weight:600; color:#fff7ee; line-height:1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
-  .card .cn { font-size:9.5px; color:#a39a92; margin-top:3px }
-  .card .sc { position:absolute; top:7px; right:7px; font-size:10px; font-weight:700; padding:2px 6px; border-radius:5px; color:#241b16; background:#ffb35c }
-  .card .rk { position:absolute; top:5px; left:8px; font: 700 16px -apple-system, sans-serif; color:#fff7ee }
-  .empty { padding:120px 20px 0; text-align:center; color:#8c8178 }
   .seg { display:inline-flex; gap:2px; padding:2px; border-radius:7px; background:rgba(0,0,0,.18); vertical-align:middle }
   .seg span { padding:2px 7px; border-radius:5px; font-size:8.5px; font-weight:700; letter-spacing:.12em; color:#8c8178; cursor:pointer }
   .seg span:hover { color:#e6dcd2 } .seg .on { background:rgba(255,255,255,.08); color:#fff7ee }
+  .hero { display:flex; gap:16px; margin:2px 20px 12px; padding:12px; border-radius:14px; position:relative; overflow:hidden;
+          background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.06) }
+  .hero .bg { position:absolute; inset:0; opacity:.18; filter:blur(28px) saturate(140%); background-size:cover; background-position:center }
+  .poster { flex:none; border-radius:9px; object-fit:cover; background:linear-gradient(160deg, #3a2e25, #1a1512); position:relative }
+  .hero .poster { width:98px; height:146px; box-shadow:0 8px 22px rgba(0,0,0,.45) }
+  .hero .info { position:relative; min-width:0; flex:1; display:flex; flex-direction:column }
+  .ttl { font-size:18px; font-weight:600; color:#fff7ee; line-height:1.2; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .meta { font-size:11px; color:#a39a92; margin-top:3px }
+  .blurb { font-size:11.5px; line-height:1.45; color:#c9bfb5; margin-top:6px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden }
+  .acts { display:flex; gap:6px; margin-top:auto; padding-top:8px }
+  .act { height:24px; padding:0 10px; border-radius:7px; display:grid; place-items:center; cursor:pointer; font-size:9px; font-weight:700; letter-spacing:.1em;
+         color:#d9cfc6; background:rgba(255,255,255,.07) }
+  .act:hover { background:rgba(255,255,255,.13); color:#fff7ee }
+  .act.main { color:#241b16; background:#ffb35c } .act.main:hover { background:#ffc47e; color:#241b16 }
+  .more { display:grid; grid-template-columns: repeat(6, 1fr); gap:9px; padding:6px 20px 0 }
+  .card { min-width:0; cursor:pointer }
+  .card .poster { width:100%; height:150px; display:block; transition: transform .25s }
+  .card:hover .poster { transform: translateY(-3px) }
+  .card .ct { font-size:10.5px; color:#d9cfc6; margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .card:hover .ct { color:#fff7ee }
+  .np { display:grid; place-items:center; padding:8px; text-align:center; font-size:11px; font-weight:600; color:#d9cfc6 }
+  .lbl.top { padding:0 20px }
+  .list { padding:0 10px }
+  .row { display:grid; grid-template-columns: 34px 1fr auto; align-items:center; gap:12px; height:54px; padding:0 10px; border-radius:9px; cursor:pointer }
+  .row:hover { background:rgba(255,179,92,.08) }
+  .row .poster { width:34px; height:48px; border-radius:5px }
+  .nm { min-width:0; font-size:13px; color:#e6dcd2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .nm small { display:block; font-size:10.5px; color:#857d75; margin-top:2px; overflow:hidden; text-overflow:ellipsis }
+  .cd { text-align:right; font: 200 22px -apple-system, "SF Pro Display", sans-serif; color:#ffb35c; line-height:1 }
+  .cd small { display:block; font: 600 9px -apple-system, sans-serif; letter-spacing:.1em; color:#857d75; margin-top:3px }
+  .cd.now { color:#4ade80 }
+  .empty { padding:110px 30px 0; text-align:center; color:#8c8178; line-height:1.6 }
 `;
-const savedTab = () => { try { return localStorage.getItem("anime-tab") || "AIRING"; } catch (e) { return "AIRING"; } };
+const savedTab = () => { try { return localStorage.getItem("watch-tab") || "FOR YOU"; } catch (e) { return "FOR YOU"; } };
 export const initialState = { output: "", tab: savedTab() };
 export const updateState = (ev, s) => ev.type === "TAB" ? { ...s, tab: ev.tab } : { ...s, output: ev.output, error: ev.error };
-const left = at => at - Date.now() / 1000;
-const span = sec => { const m = Math.round(Math.abs(sec) / 60);
-  return m < 60 ? m + "m" : m < 1440 ? Math.floor(m / 60) + "h " + String(m % 60).padStart(2, "0") + "m" : Math.round(m / 1440) + "d"; };
-const clock = at => new Date(at * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
-const day = at => { const d = new Date(at * 1000), t = new Date(); return d.toDateString() === t.toDateString() ? "Today"
-  : d.toDateString() === new Date(+t + 864e5).toDateString() ? "Tomorrow" : d.toLocaleDateString("en-GB", { weekday: "short" }); };
-const open = u => run(`open "${u}"`);
+const year = x => ((x.desc || "").match(/\b(19|20)\d\d\b/) || [""])[0];
+const hm = m => m ? Math.floor(m / 60) + "h " + String(m % 60).padStart(2, "0") + "m" : "";
+const meta = x => [year(x), x.kind === "show" ? "Series" + (x.net ? " · " + x.net : "") : "Film", x.kind !== "show" && hm(x.mins),
+  x.rating && "★ " + x.rating.toFixed(1)].filter(Boolean).join(" · ");
+const trailer = x => run(`open "https://www.youtube.com/results?search_query=${encodeURIComponent(x.title + " " + year(x) + " official trailer")}"`);
+const days = iso => Math.round((new Date(iso.slice(0, 10) + "T00:00") - new Date(new Date().toDateString())) / 864e5);
+const dayName = iso => new Date(iso.slice(0, 10) + "T00:00").toLocaleDateString("en-GB",  // the year only when it isn't this one
+  { weekday: "short", day: "numeric", month: "short", ...(iso.slice(0, 4) != new Date().getFullYear() ? { year: "numeric" } : {}) });
+const Poster = ({ x, small }) => x.poster ? <img className="poster" src={x.poster} alt="" /> : <div className="poster np">{small ? x.title[0] : x.title}</div>;
 export const render = ({ output, tab }, dispatch) => {
-  let a = null; try { a = JSON.parse(output); } catch (e) {}
-  const pick = t => { try { localStorage.setItem("anime-tab", t); } catch (e) {} dispatch({ type: "TAB", tab: t }); };
-  const air = (a && a.air) || [], soon = air.filter(x => left(x.at) > 0), out = air.filter(x => left(x.at) <= 0);
-  // the hero is the most-followed show still to air in the next 24 h (else the next one at all)
-  const near = soon.filter(x => left(x.at) < 24 * 3600), hero = near.length ? near.reduce((b, x) => x.fans > b.fans ? x : b) : soon[0];
-  // then what's next, with the biggest shows that just came out mixed in
-  const rows = [...soon.filter(x => x !== hero).slice(0, 4), ...out.sort((x, y) => y.fans - x.fans).slice(0, 2)].sort((x, y) => x.at - y.at).slice(0, 6);
-  const sub = soon.filter(x => left(x.at) < 86400).length;
+  let d = null; try { d = JSON.parse(output); } catch (e) {}
+  const pick = t => { try { localStorage.setItem("watch-tab", t); } catch (e) {} dispatch({ type: "TAB", tab: t }); };
+  const act = (verb, key) => run(`%%PY%% ~/.stark/picks.py ${verb} '${(key || "").replace(/'/g, "'\\''")}'`)
+    .then(out => dispatch({ type: "UB/COMMAND_RAN", output: out }));
+  const p = d && d.pick;
+  // coming up: DC / Marvel releases + new episodes, soonest first
+  const up = d ? [...d.soon.map(x => ({ x, at: x.release, film: 1 })),
+    ...d.eps.map(x => { const e = x.next && days(x.next.at) >= 0 ? x.next : x.prev; return { x, at: e.at, e }; })]
+    .sort((a, b) => a.at.localeCompare(b.at)).slice(0, 6) : [];  // 6 rows fill the panel
   return (
     <div>
-      <header><span style={{ color: "#ffb35c" }}>✦</span><h1>ANIME</h1>
-        <span className="sub"><span className="seg">{["AIRING", "TRENDING"].map(t =>
+      <header><span style={{ color: "#ffb35c" }}>▶</span><h1>WATCH</h1>
+        <span className="sub"><span className="seg">{["FOR YOU", "COMING UP"].map(t =>
           <span key={t} className={tab === t ? "on" : ""} onClick={() => pick(t)}>{t}</span>)}</span>
-          {tab === "AIRING" && <span> · <b>{sub}</b> IN NEXT 24H</span>}</span></header>
-      {!a ? <div className="empty">Checking the schedule…</div>
-        : tab === "TRENDING" ? <div className="grid">
-          {(a.hot || []).slice(0, 8).map((x, i) => <div className="card" key={x.id} onClick={() => open(x.url)}>
-            <img src={x.cover} alt="" /><span className="rk">{i + 1}</span>{x.score && <span className="sc">{x.score}%</span>}
-            <div className="ov"><div className="ct">{x.title}</div>
-              <div className="cn">{x.next ? "EP " + x.next.episode + " in " + span(left(x.next.airingAt)) : (x.genres || []).slice(0, 2).join(" · ")}</div></div>
-          </div>)}</div>
+          {d && <span> · <b>{d.seen}</b> SEEN</span>}</span></header>
+      {!d ? <div className="empty">Finding something good to watch…</div>
+        : tab === "COMING UP" ? <div className="list">
+          {!up.length && <div className="empty">Nothing new from your list right now.</div>}
+          {up.map(({ x, at, film, e }) => { const n = days(at);
+            return <div className="row" key={x.key} onClick={() => trailer(x)}>
+              <Poster x={x} small />
+              <span className="nm">{x.title}<small>{film ? (n > 0 ? "In cinemas " : "Out since ") + dayName(at) + " · " + x.why
+                : "S" + e.s + " E" + e.e + (e.name ? " · " + e.name : "") + (x.net ? " · " + x.net : "")}</small></span>
+              <span className={"cd num" + (n <= 0 ? " now" : "")}>{n > 0 ? (n > 99 ? Math.round(n / 30) + "mo" : n + "d") : n === 0 ? "Today" : "Out"}
+                <small>{n > 0 ? (film ? "TO PREMIERE" : "TO NEW EP") : film ? "IN CINEMAS" : "NEW EPISODE"}</small></span>
+            </div>; })}
+        </div>
+        : !p ? <div className="empty">You've seen everything on the list. Ask Claude for more picks!</div>
         : <div>
-          {hero && <div className="hero" onClick={() => open(hero.url)}>
-            <div className="bg" style={{ backgroundImage: `url(${hero.cover})` }} />
-            <img src={hero.cover} alt="" />
+          <div className="hero">
+            {p.poster && <div className="bg" style={{ backgroundImage: `url("${p.poster}")` }} />}
+            <Poster x={p} />
             <div className="info">
-              <div className="lbl" style={{ color: "#ffb35c" }}>NEXT UP</div>
-              <div className="ttl">{hero.title}</div>
-              <div className="ep">Episode {hero.ep}{hero.eps ? " of " + hero.eps : ""} · {day(hero.at)} {clock(hero.at)}{hero.score ? " · ★ " + hero.score + "%" : ""}</div>
-              <div className="cd num">{span(left(hero.at))}<small>TO GO</small></div>
-            </div></div>}
-          <div className="list">
-            {rows.map(x => { const t = left(x.at);
-              return <div className="row" key={x.id + "-" + x.ep} onClick={() => open(x.url)}>
-                <img src={x.cover} alt="" />
-                <span className="nm">{x.title}<span>EP {x.ep}</span></span>
-                <span className={"when" + (t <= 0 ? " out" : t < 3 * 3600 ? " soon" : "")}>{t <= 0 ? "Out " + span(t) + " ago" : day(x.at) + " " + clock(x.at)}</span>
-              </div>; })}
+              <div className="lbl" style={{ color: "#ffb35c" }}>TONIGHT'S PICK · {p.why.toUpperCase()}</div>
+              <div className="ttl">{p.title}</div>
+              <div className="meta">{meta(p)}</div>
+              <div className="blurb">{p.blurb}</div>
+              <div className="acts">
+                <span className="act main" onClick={() => trailer(p)}>▶ TRAILER</span>
+                <span className="act" onClick={() => act("seen", p.key)}>✓ SEEN IT</span>
+                <span className="act" onClick={() => act("another")}>↻ ANOTHER</span>
+                <span className="act" onClick={() => act("skip", p.key)}>✕ NOT FOR ME</span>
+              </div>
+            </div>
+          </div>
+          <div className="lbl top">MORE FOR YOU</div>
+          <div className="more">
+            {d.more.map(x => <div className="card" key={x.key} title={x.why + " · " + meta(x)} onClick={() => trailer(x)}>
+              <Poster x={x} /><div className="ct">{x.title}</div></div>)}
           </div></div>}
     </div>
   );
 };''')
+
 
 # ───────────────────────── LICHESS TV ─────────────────────────
 widget("chesstv", r'''// Lichess TV: the top-rated game being played right now, live. Click the board to watch it on Lichess.
@@ -1288,7 +1312,7 @@ def v(x, y1, y2):
     links.append(f'<path className="flow" d="M {x} {y1} V {y2}" /><circle cx="{x}" cy="{y1}" r="2.5" /><circle cx="{x}" cy="{y2}" r="2.5" />')
 for x in (L + 90, L + 310):                                             # left stack
     v(x, 286, 306); v(x, 626, 646)
-for x in (C + 140, C + 426): v(x, 484, 504)                             # puzzle ↔ anime
+for x in (C + 140, C + 426): v(x, 484, 504)                             # puzzle ↔ watch
 for x in (R + 90, R + 310):                                             # right stack
     v(x, 332, 352); v(x, 682, 702)
 h(432, 452, 171); h(432, 452, 466); h(432, 452, 789)                    # left column ↔ centre
@@ -1552,9 +1576,9 @@ const installMonkey = () => {
   const troop = Array.from({ length: MONKEYS }, (_, i) => monkey(i));
   window.__monkeyNow = async () => { for (const go of troop) { const p = go(); if (await Promise.race([p, Promise.resolve("running")]) === "running") return "sent"; } return "all out"; };
 };
-const PAIRS = [["clock", "weather"], ["weather", "system"], ["puzzle", "anime"], ["batcave", "chesstv"], ["chesstv", "connections"],
-  ["clock", "puzzle"], ["weather", "puzzle"], ["system", "anime"], ["puzzle", "batcave"], ["puzzle", "chesstv"],
-  ["anime", "chesstv"], ["anime", "connections"]];
+const PAIRS = [["clock", "weather"], ["weather", "system"], ["puzzle", "watch"], ["batcave", "chesstv"], ["chesstv", "connections"],
+  ["clock", "puzzle"], ["weather", "puzzle"], ["system", "watch"], ["puzzle", "batcave"], ["puzzle", "chesstv"],
+  ["watch", "chesstv"], ["watch", "connections"]];
 const LAYOUT_VERSION = "3";  // clears positions saved back when panels could be rearranged
 const installLinks = () => {
   if (window.__hudLinks === "%%BUILD%%") return; window.__hudLinks = "%%BUILD%%";
