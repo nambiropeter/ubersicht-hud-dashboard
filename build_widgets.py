@@ -734,12 +734,12 @@ export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: e
   : ev.type === "VPN" ? { ...prev, vpnBusy: ev.busy }
   : ev.type === "SPEED" ? { ...prev, speed: ev.speed, testing: ev.testing } : { ...prev, output: ev.output, error: ev.error };
 const problem = n => (window.__offline = n.ip === "offline" || n.services.every(x => !x.ms)) ? "No internet" : null;
-// per-service [amber from, red from] in ms, set from how each one reaches Nairobi (measured 2026-10-04, DNS + TCP connect):
+// per-service [amber from, red from] in ms, set from how each one reaches Nairobi (measured 2026-10-04/22, DNS + TCP connect):
 // Meta, TikTok and Google sit on edge caches in Kenya (~20ms); Apple and Netflix are local too but their DNS takes
-// longer (~70ms); Claude's edge and GitHub's Johannesburg servers are ~70ms; Yahoo comes from London (~145ms).
+// longer (~70ms); Claude's edge and GitHub's Johannesburg servers are ~70ms; Lichess comes from France (~145ms).
 // Amber is about 2x a service's normal time and red about 5x; services not listed use the default.
 const LIMITS = { Meta: [90, 250], TikTok: [90, 250], Google: [90, 250], Apple: [150, 400], Netflix: [150, 400],
-                 Claude: [150, 400], GitHub: [150, 400], Yahoo: [300, 750] }, LIMIT = [150, 450];
+                 Claude: [150, 400], GitHub: [150, 400], Lichess: [300, 750] }, LIMIT = [150, 450];
 const lim = s => LIMITS[s.name] || LIMIT;
 const weak = s => !s.ms || s.ms >= lim(s)[0];   // amber, red or down: the link flickers and throws sparks
 // a few sparks per weak link, spraying out from the node and from the middle of the line; fixed angles so they don't jump on refresh

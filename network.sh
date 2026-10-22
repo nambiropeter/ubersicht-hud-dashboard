@@ -13,7 +13,7 @@ import socket, time
 from concurrent.futures import ThreadPoolExecutor
 # order = node slot in the Connections panel
 HOSTS = [("Claude", "api.anthropic.com"), ("GitHub", "github.com"), ("Apple", "www.apple.com"), ("Meta", "www.meta.com"),
-         ("TikTok", "www.tiktok.com"), ("Yahoo", "finance.yahoo.com"), ("Netflix", "www.netflix.com"), ("Google", "www.google.com")]
+         ("TikTok", "www.tiktok.com"), ("Lichess", "lichess.org"), ("Netflix", "www.netflix.com"), ("Google", "www.google.com")]
 def ping(h):
     t = time.monotonic()
     try: socket.create_connection((h, 443), timeout=3).close(); return round((time.monotonic() - t) * 1000)

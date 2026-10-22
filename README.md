@@ -52,18 +52,28 @@ throughput over one second, and the panel draws each service as a node wired to 
 
 **Colours per service:** green under the amber limit, amber up to the red limit, red above it, burning when the connection fails (3 s timeout).
 The limits live in `LIMITS` in `build_widgets.py`, as `[amber from, red from]` in ms. They are tuned for Nairobi
-(Meta/TikTok/Google `90/250`, Apple/Netflix/Claude/GitHub `150/400`, Yahoo `300/750`, anything else `150/450`).
+(Meta/TikTok/Google `90/250`, Apple/Netflix/Claude/GitHub `150/400`, Lichess `300/750`, anything else `150/450`).
 Measure your own normal times with `~/.stark/network.sh` and set amber to about 2× and red to about 5× those.
 
 **Changing the services:** edit `HOSTS` in `network.sh` (`("Name", "host.com")`, up to 8). Their order is the node
 position in the ring; the 7th and 8th sit top and bottom centre, so give those short names. Add a `LIMITS` entry for any
 new name, then run `python3 ~/.stark/build_widgets.py`.
 
+**Play with the nodes:** drag a service anywhere in the panel (its line stretches and dashes) and let go: it springs
+home with a wobble, bouncing off the panel edges if you fling it. Click one to ping just that service (`ping.py`), and
+a packet runs out along its line and back with the new time.
+
 **LINK view** (toggle in the header): Wi‑Fi signal, channel and link rate, VPN state, public IP and ISP (from
 [ipinfo.io](https://ipinfo.io), refreshed every 10 min) and the last speed test (macOS's built‑in `networkQuality`,
 every 3 hours, skipped on an iPhone hotspot; ↻ runs one now). macOS hides the Wi‑Fi name from scripts, so to show it
 create a **Shortcuts** shortcut named exactly `Wi-Fi Name` containing the single action *Get Network Details*
 (Network Name of Wi‑Fi). Without it the panel says *Name hidden*.
+
+**Free VPN:** the VPN row's **OFF / US / UK** switch runs `vpn.sh`, which starts Tor (`brew install tor`) with its exit
+pinned to that country and turns on the macOS SOCKS proxy only after checking the exit really is there (UK exits are
+double-checked against ipinfo.io). Tor runs only while the VPN is on; a switch takes about 7–15 s. Browsers and most
+apps follow the system proxy; for terminal tools add `source ~/.stark/vpn.zsh` to `~/.zshrc` (also gives a `vpn us|uk|off`
+alias). It's Tor, so expect slower speeds and the odd site that blocks it.
 
 ## Install
 
@@ -109,6 +119,8 @@ picks.py           movie & show picks: Wikipedia/Wikidata details, TVmaze episod
 weather.sh         Open-Meteo forecast
 system.sh          CPU / memory / disk / battery
 network.sh         IP, throughput, service latency, Wi-Fi / VPN / public IP
+ping.py            one-service latency probe (click a Connections node)
+vpn.sh / vpn.zsh   free US/UK VPN over Tor (system proxy + terminal proxy vars)
 speedtest.sh       cached networkQuality speed test
 wifi.swift         Wi-Fi link details (CoreWLAN)
 hudcursor.swift    hides the system pointer over panels
