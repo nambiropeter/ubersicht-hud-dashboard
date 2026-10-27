@@ -37,11 +37,17 @@ func findCanvas(_ ws: [[String: Any]]) {
   canvasPid = 0
 }
 
+// Above-normal windows spanning the whole display (Notification Center's overlay on macOS 27) are
+// transparent and click-through, so they don't count as covering a panel. Full-screen apps are layer 0.
 func covered(_ p: CGPoint, _ ws: [[String: Any]]) -> Bool {
+  let screen = CGDisplayBounds(CGMainDisplayID())
   for w in ws {
     let layer = w[kCGWindowLayer as String] as? Int ?? 0, alpha = w[kCGWindowAlpha as String] as? Double ?? 1
     if layer < 0 || alpha < 0.05 || (w[kCGWindowOwnerPID as String] as? Int32) == canvasPid { continue }
-    if let b = w[kCGWindowBounds as String] as? NSDictionary, let r = CGRect(dictionaryRepresentation: b), r.contains(p) { return true }
+    if let b = w[kCGWindowBounds as String] as? NSDictionary, let r = CGRect(dictionaryRepresentation: b), r.contains(p) {
+      if layer > 0 && r.contains(screen) { continue }
+      return true
+    }
   }
   return false
 }
