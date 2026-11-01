@@ -51,6 +51,12 @@ SHARED = """
               height:24px; padding:0 9px; border-radius:7px; background:rgba(58,20,18,.94); border:1px solid rgba(255,107,107,.5);
               font: 600 10px -apple-system, sans-serif; letter-spacing:.03em; color:#ffc2b8; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .syncwarn.on { display:flex }
+  /* boot-in: each panel rises and fades in, staggered across the grid (one-shot, replays on rebuild/launch) */
+  animation: panelin .8s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: var(--in, 0ms);
+  @keyframes panelin { from { opacity:0; transform: translateY(14px) scale(.985) } }
+  @keyframes rise { from { opacity:0; transform: translateY(8px) } }
+  @keyframes fadein { from { opacity:0 } }
+  .seg span { transition: background .2s, color .2s }
 """
 
 AGO = """const ago = d => {
@@ -388,7 +394,7 @@ def after_tag(src, attr, insert):
 def widget(name, body):
     x, y, w, h = POS.get(name, (0, 0, 0, 0)); y += DY
     body = (body.replace("%%SHARED%%", SHARED)
-                .replace("%%POS%%", f"left: {x}px; top: {y}px; width: {w}px; height: {h}px;")
+                .replace("%%POS%%", f"left: {x}px; top: {y}px; width: {w}px; height: {h}px; --in: {round(x / 1470 * 360 + (y - DY) / 956 * 420)}ms;")
                 .replace("%%ZONES%%", ZONES).replace("%%PY%%", PY).replace("%%AGO%%", AGO).replace("%%SPARK%%", SPARK)
                 .replace("%%FMT%%", FMT).replace("%%HOURS%%", HOURS).replace("%%CHESS%%", CHESS).replace("%%BOARDCSS%%", BOARDCSS)
                 .replace("%%W2%%", str(w + 2)).replace("%%H2%%", str(h + 2)))
@@ -426,7 +432,11 @@ export const className = `
   box-sizing: border-box; width: %%W2%%px; height: %%H2%%px; padding: 20px 20px 18px 22px;  /* same outer size as the panels below */
   .time { display:flex; align-items:baseline; gap:8px }
   .time b { font: 200 68px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.03em; line-height:1; color:#ffffff }
-  .time span { font: 300 22px -apple-system, sans-serif; color:#f5b14c }
+  .time span { font: 300 22px -apple-system, sans-serif; color:#f5b14c; display:inline-block; animation: tick .4s cubic-bezier(.2,.8,.2,1) }
+  @keyframes tick { from { opacity:0; transform: translateY(-9px) } }
+  .time b { display:inline-block; animation: flip .6s cubic-bezier(.2,.8,.2,1) }
+  @keyframes flip { from { opacity:.25; transform: translateY(8px); filter: blur(3px) } }
+  .view.on .date, .view.on .greet { animation: rise .45s cubic-bezier(.2,.8,.2,1) backwards } .view.on .greet { animation-delay: .06s }
   .date { margin-top:10px; font: 500 15px -apple-system, sans-serif; color:#ebe5dd }
   .greet { margin-top:2px; font-size:12.5px; letter-spacing:.06em; color:#5f8a99 }
   .ex { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px; margin-top:18px }
@@ -440,7 +450,8 @@ export const className = `
   @keyframes wave { 0%, 100% { transform: perspective(80px) rotateY(0) skewY(0) } 25% { transform: perspective(80px) rotateY(-18deg) skewY(-3deg) }
                     75% { transform: perspective(80px) rotateY(12deg) skewY(2deg) } }
   .here .n { font: 700 7.5px Orbitron, sans-serif; letter-spacing:.18em; color:#8c8178; margin-top:4px }
-  .cell { cursor:default; transition: background .25s, border-color .25s }
+  .cell { cursor:default; transition: background .25s, border-color .25s, transform .25s cubic-bezier(.2,.8,.2,1) }
+  .cell:hover { transform: translateY(-2px) }
   .cell:hover, .cell.sel { background:rgba(255,255,255,.075); border-color: rgba(245,177,76,.35) }
   .stage { display:grid }
   .view { grid-area: 1 / 1; position:relative; opacity:0; visibility:hidden; transition: opacity .25s, visibility .25s }
@@ -471,15 +482,15 @@ export const render = () => {
       <div className="stage">
         <div className="view on" data-k="here">
           <div className="here" title={city}><div className="f">{flag(cc)}</div><div className="n">{(cc ? region(cc) : city).toUpperCase()}</div></div>
-          <div className="time num"><b>{now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</b>
-            <span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
+          <div className="time num"><b key={now.getHours() + ":" + now.getMinutes()}>{now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</b>
+            <span key={now.getSeconds()}>{String(now.getSeconds()).padStart(2, "0")}</span></div>
           <div className="date">{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
           <div className="greet">Good {partOf(h)[0] === "night" ? "evening" : partOf(h)[0]}, Anthony</div>
         </div>
         {CITIES.map(c => { const t = localParts(c.tz, now); return (
           <div className="view" data-k={c.city} key={c.city}>
             <div className="here"><div className="f">{flag(c.cc)}</div><div className="n">{c.city}</div></div>
-            <div className="time num"><b>{t.hm}</b><span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
+            <div className="time num"><b key={t.hm}>{t.hm}</b><span key={now.getSeconds()}>{String(now.getSeconds()).padStart(2, "0")}</span></div>
             <div className="date">{now.toLocaleDateString("en-GB", { timeZone: c.tz, weekday: "long", day: "numeric", month: "long" })}</div>
             <div className="greet">{partOf(t.h)[1]} {partOf(t.h)[0]} there · {offset(c.tz, now)}</div>
           </div>); })}
@@ -509,6 +520,9 @@ export const className = `
   .temp .lo { font-size:24px; color:#8c8178; margin-left:4px; letter-spacing:0 }
   .cond .when { font-size:9.5px; letter-spacing:.16em; color:#f5b14c; font-weight:600 }
   .ico { font-size:54px; line-height:1; filter: drop-shadow(0 4px 12px rgba(255,179,92,.35)) }
+  .view.on .ico { animation: bob 6s ease-in-out infinite } @keyframes bob { 50% { transform: translateY(-4px) rotate(-2deg) } }
+  .view.on .temp, .view.on .cond { animation: rise .4s cubic-bezier(.2,.8,.2,1) backwards } .view.on .cond { animation-delay: .05s }
+  .view.on .chip { animation: rise .4s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(.08s + var(--i) * 35ms) }
   .temp { font: 200 60px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.02em; line-height:1; color:#ffffff }
   .temp sup { font-size:18px; color:#ffb35c; vertical-align: 20px; margin-left:2px }
   .cond { margin-left:auto; text-align:right }
@@ -517,13 +531,16 @@ export const className = `
   .chips { display:flex; gap:8px; padding:6px 20px 16px }
   .chip { flex:1; text-align:center; font-size:11.5px; padding:7px 0; border-radius:10px; background:rgba(255,214,170,.04); border:1px solid rgba(255,214,170,.06); color:#d9cfc6; white-space:nowrap }
   .days { display:grid; grid-template-columns: repeat(5, 1fr); gap:6px; margin:6px 16px 0; padding-top:18px; border-top:1px solid rgba(255,214,170,.08); text-align:center }
-  .d { border-radius:10px; padding:10px 0 12px; cursor:pointer; transition: background .25s, box-shadow .25s }
+  .d { border-radius:10px; padding:10px 0 12px; cursor:pointer; transition: background .25s, box-shadow .25s;
+       animation: rise .5s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(.35s + var(--i) * 70ms) }
+  .d .i { transition: transform .3s cubic-bezier(.3,1.6,.5,1) } .d:hover .i, .d.sel .i { transform: scale(1.18) translateY(-2px) }
   .d:hover, .d.sel { background:rgba(255,255,255,.06); box-shadow: inset 0 0 0 1px rgba(245,177,76,.3) }
   .d .n { font-size:9.5px; letter-spacing:.14em; color:#8c8178; font-weight:600 }
   .d .i { font-size:24px; margin:8px 0 5px }
   .d .hl { font-size:12px } .d .hl span { color:#6f665f }
   .bar { height:3px; margin:5px 12px 0; border-radius:2px; background:rgba(127,220,255,.12); overflow:hidden }
-  .bar i { display:block; height:100%; background:#7fdcff }
+  .bar i { display:block; height:100%; background:#7fdcff; transform-origin:left; animation: fill 1s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(.6s + var(--i) * 70ms) }
+  @keyframes fill { from { transform: scaleX(0) } }
 `;
 const WMO = { 0:["Clear","☀️","🌙"], 1:["Mostly clear","🌤","🌙"], 2:["Partly cloudy","⛅️","☁️"], 3:["Overcast","☁️","☁️"],
   45:["Fog","🌫","🌫"], 48:["Fog","🌫","🌫"], 51:["Drizzle","🌦","🌧"], 53:["Drizzle","🌦","🌧"], 55:["Drizzle","🌧","🌧"],
@@ -548,11 +565,11 @@ const DayView = ({ d, i }) => { const [label, icon] = wmo(d.weather_code[i]), at
           <span className="num">Rain chance {d.precipitation_probability_max[i] ?? 0}%</span></div>
       </div>
       <div className="chips num">
-        <span className="chip">🌧 {(d.precipitation_sum?.[i] ?? 0).toFixed(1)} mm</span>
-        <span className="chip">💨 {Math.round(d.wind_speed_10m_max?.[i] ?? 0)} km/h</span>
-        <span className="chip">UV {Math.round(d.uv_index_max[i])}</span>
-        <span className="chip">☀︎ {hm(d.sunrise[i])}</span>
-        <span className="chip">☾ {hm(d.sunset[i])}</span>
+        <span className="chip" style={{ "--i": 0 }}>🌧 {(d.precipitation_sum?.[i] ?? 0).toFixed(1)} mm</span>
+        <span className="chip" style={{ "--i": 1 }}>💨 {Math.round(d.wind_speed_10m_max?.[i] ?? 0)} km/h</span>
+        <span className="chip" style={{ "--i": 2 }}>UV {Math.round(d.uv_index_max[i])}</span>
+        <span className="chip" style={{ "--i": 3 }}>☀︎ {hm(d.sunrise[i])}</span>
+        <span className="chip" style={{ "--i": 4 }}>☾ {hm(d.sunset[i])}</span>
       </div>
     </div>); };
 export const render = ({ output }) => {
@@ -573,18 +590,18 @@ export const render = ({ output }) => {
           <span className="num">H {Math.round(d.temperature_2m_max[0])}° · L {Math.round(d.temperature_2m_min[0])}°</span></div>
       </div>
       <div className="chips num">
-        <span className="chip">💧 {c.relative_humidity_2m}%</span>
-        <span className="chip">💨 {Math.round(c.wind_speed_10m)} km/h</span>
-        <span className="chip">UV {Math.round(d.uv_index_max[0])}</span>
-        <span className="chip">☀︎ {hm(d.sunrise[0])}</span>
-        <span className="chip">☾ {hm(d.sunset[0])}</span>
+        <span className="chip" style={{ "--i": 0 }}>💧 {c.relative_humidity_2m}%</span>
+        <span className="chip" style={{ "--i": 1 }}>💨 {Math.round(c.wind_speed_10m)} km/h</span>
+        <span className="chip" style={{ "--i": 2 }}>UV {Math.round(d.uv_index_max[0])}</span>
+        <span className="chip" style={{ "--i": 3 }}>☀︎ {hm(d.sunrise[0])}</span>
+        <span className="chip" style={{ "--i": 4 }}>☾ {hm(d.sunset[0])}</span>
       </div>
       </div>
       {d.time.slice(1, 6).map((t, i) => <DayView key={t} d={d} i={i + 1} />)}
       </div>
       <div className="days">
         {d.time.slice(1, 6).map((t, i) => { const rain = d.precipitation_probability_max[i + 1] ?? 0; return (
-          <div className="d" key={t} data-k={"d" + (i + 1)} onMouseEnter={e => pick(e.currentTarget.closest(".days").parentElement, "d" + (i + 1))}>
+          <div className="d" key={t} data-k={"d" + (i + 1)} style={{ "--i": i }} onMouseEnter={e => pick(e.currentTarget.closest(".days").parentElement, "d" + (i + 1))}>
             <div className="n">{new Date(t + "T12:00").toLocaleDateString("en-US", { weekday: "short" }).toUpperCase()}</div>
             <div className="i">{wmo(d.weather_code[i + 1])[1]}</div>
             <div className="hl num">{Math.round(d.temperature_2m_max[i + 1])}° <span>{Math.round(d.temperature_2m_min[i + 1])}°</span></div>
@@ -606,12 +623,19 @@ export const className = `
   .ring svg { width:64px; height:64px }
   .ring b { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:14.5px; font-weight:500 }
   .ring b small { font-size:8.5px; color:#8c8178; margin-left:1px }
+  .arc { transition: stroke-dashoffset .9s cubic-bezier(.2,.8,.2,1), stroke .6s; animation: sweep 1.3s cubic-bezier(.2,.8,.2,1) backwards }
+  .rings > div:nth-child(2) .arc { animation-delay: .08s } .rings > div:nth-child(3) .arc { animation-delay: .16s }
+  .rings > div:nth-child(4) .arc { animation-delay: .24s } .rings > div:nth-child(5) .arc { animation-delay: .32s }
+  @keyframes sweep { from { stroke-dashoffset: var(--c) } }
+  .ring { transition: transform .3s cubic-bezier(.3,1.6,.5,1) } .rings > div:hover .ring { transform: scale(1.07) }
+  .ring b { animation: fadein .8s .4s backwards }
   .rl { margin-top:7px; letter-spacing:.18em }
   .rs { margin-top:3px; font-size:9.5px; color:#a39a92; white-space:nowrap }
   .load { margin:20px 20px 0 }
   .load .top { display:flex; justify-content:space-between; font-size:10.5px; color:#a39a92 } .load .top b { color:#e6dcd2; font-weight:500 }
   .load .bar { height:5px; margin-top:6px; border-radius:3px; background:rgba(255,214,170,.08); overflow:hidden }
-  .load .bar i { display:block; height:100%; border-radius:3px; transition: width .6s ease }
+  .load .bar i { display:block; height:100%; border-radius:3px; transition: width .6s ease, background .6s; transform-origin:left; animation: fill 1.1s .3s cubic-bezier(.2,.8,.2,1) backwards }
+  @keyframes fill { from { transform: scaleX(0) } }
   .foot { display:flex; justify-content:space-between; margin:20px 20px 0; padding-top:14px; border-top:1px solid rgba(255,214,170,.08); font-size:10.5px; color:#a39a92 }
   .foot b { color:#e6dcd2; font-weight:500 }
 `;
@@ -622,8 +646,9 @@ const Ring = ({ v, col, label, sub, title }) => {
       <div className="ring">
         <svg width="56" height="56" viewBox="0 0 56 56">
           <circle cx="28" cy="28" r={r} fill="none" stroke="rgba(255,214,170,.08)" strokeWidth="4.5" />
-          <circle cx="28" cy="28" r={r} fill="none" stroke={col} strokeWidth="4.5" strokeLinecap="round"
-            strokeDasharray={`${C * f} ${C}`} transform="rotate(-90 28 28)" style={{ filter: `drop-shadow(0 0 4px ${col})` }} />
+          <circle className="arc" cx="28" cy="28" r={r} fill="none" stroke={col} strokeWidth="4.5" strokeLinecap="round"
+            strokeDasharray={`${C} ${C}`} strokeDashoffset={C * (1 - f)} transform="rotate(-90 28 28)"
+            style={{ filter: `drop-shadow(0 0 4px ${col})`, "--c": C }} />
         </svg>
         <b className="num">{Math.round(v)}<small>%</small></b>
       </div>
@@ -940,8 +965,12 @@ export const refreshFrequency = 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
   .list { padding:8px 10px 0 }
-  .row { display:grid; grid-template-columns: 10px 1fr auto 30px; align-items:center; gap:10px; height:36px; padding:0 9px; border-radius:8px; cursor:pointer }
+  .row { display:grid; grid-template-columns: 10px 1fr auto 30px; align-items:center; gap:10px; height:36px; padding:0 9px; border-radius:8px; cursor:pointer;
+         transition: background .2s; animation: rise .45s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(.3s + var(--i) * 55ms) }
   .row:hover { background:rgba(255,179,92,.08) } .row:hover .name { color:#ffb35c }
+  .name { transition: transform .25s cubic-bezier(.2,.8,.2,1), color .2s } .row:hover .name { transform: translateX(3px) }
+  .row:active { transform: scale(.985) }
+  .dot.on { animation: breathe 2.8s ease-in-out infinite } @keyframes breathe { 50% { opacity:.45 } }
   .dot { width:7px; height:7px; border-radius:50% }
   .name { font-weight:600; font-size:12.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .name i { font-style:normal; color:#ffb35c; font-size:10px; margin-left:6px; font-weight:500 }
@@ -979,9 +1008,9 @@ export const render = ({ output }) => {
       <header><svg width="28" height="13" viewBox="-340 -90 680 190"><polygon points={bat} fill="#ffb35c" /></svg>
         <h1>BATCAVE</h1><span className="sub" title="Uncommitted repos · your commits in the last 12 weeks"><b>{active}</b> ACTIVE · <b>{total}</b> COMMITS</span></header>
       <div className="list">
-        {repos.slice(0, 6).map(r => (
-          <div className="row" key={r.path} onClick={() => run(`open -a "Visual Studio Code" "${r.path}"`)}>
-            <span className="dot" style={{ background: r.dirty ? "#ffb35c" : "#4a403a", boxShadow: r.dirty ? "0 0 8px #ffb35c" : "none" }} />
+        {repos.slice(0, 6).map((r, i) => (
+          <div className="row" key={r.path} style={{ "--i": i }} onClick={() => run(`open -a "Visual Studio Code" "${r.path}"`)}>
+            <span className={"dot" + (r.dirty ? " on" : "")} style={{ background: r.dirty ? "#ffb35c" : "#4a403a", boxShadow: r.dirty ? "0 0 8px #ffb35c" : "none" }} />
             <span className="name">{r.name}{r.dirty > 0 && <i>✎ {r.dirty}</i>}</span>
             <span className="br">{r.branch || "—"}</span>
             <span className="ago num">{ago(r.ts)}</span>
@@ -1155,17 +1184,24 @@ export const className = `
   .act { height:24px; padding:0 10px; border-radius:7px; display:grid; place-items:center; cursor:pointer; font-size:9px; font-weight:700; letter-spacing:.1em;
          color:#d9cfc6; background:rgba(255,255,255,.07) }
   .act:hover { background:rgba(255,255,255,.13); color:#fff7ee }
+  .act { transition: background .2s, color .2s, transform .12s } .act:active { transform: scale(.94) }
   .act.main { color:#241b16; background:#ffb35c } .act.main:hover { background:#ffc47e; color:#241b16 }
   .more { display:grid; grid-template-columns: repeat(6, 1fr); gap:9px; padding:6px 20px 0 }
   .card { min-width:0; cursor:pointer }
-  .card .poster { width:100%; height:150px; display:block; transition: transform .25s }
-  .card:hover .poster { transform: translateY(-3px) }
+  .card { animation: rise .5s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(.15s + var(--i) * 60ms) }
+  .card .poster { width:100%; height:150px; display:block; transition: transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s }
+  .card:hover .poster { transform: translateY(-5px) scale(1.03); box-shadow: 0 12px 24px rgba(0,0,0,.5) }
+  .pane { animation: fadein .35s ease-out }
+  .hero { animation: rise .5s cubic-bezier(.2,.8,.2,1) }
+  .hero .poster { animation: fadein .6s ease-out }
   .card .ct { font-size:10.5px; color:#d9cfc6; margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .card:hover .ct { color:#fff7ee }
   .np { display:grid; place-items:center; padding:8px; text-align:center; font-size:11px; font-weight:600; color:#d9cfc6 }
   .lbl.top { padding:0 20px }
   .list { padding:0 10px }
-  .row { display:grid; grid-template-columns: 34px 1fr auto; align-items:center; gap:12px; height:54px; padding:0 10px; border-radius:9px; cursor:pointer }
+  .row { display:grid; grid-template-columns: 34px 1fr auto; align-items:center; gap:12px; height:54px; padding:0 10px; border-radius:9px; cursor:pointer;
+         transition: background .2s; animation: rise .45s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(var(--i) * 55ms) }
+  .row .poster { transition: transform .25s cubic-bezier(.2,.8,.2,1) } .row:hover .poster { transform: scale(1.08) rotate(-2deg) }
   .row:hover { background:rgba(255,179,92,.08) }
   .row .poster { width:34px; height:48px; border-radius:5px }
   .nm { min-width:0; font-size:13px; color:#e6dcd2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
@@ -1204,10 +1240,10 @@ export const render = ({ output, tab }, dispatch) => {
           <span key={t} className={tab === t ? "on" : ""} onClick={() => pick(t)}>{t}</span>)}</span>
           {d && <span> · <b>{d.seen}</b> SEEN</span>}</span></header>
       {!d ? <div className="empty">Finding something good to watch…</div>
-        : tab === "COMING UP" ? <div className="list">
+        : tab === "COMING UP" ? <div className="list pane" key="up">
           {!up.length && <div className="empty">Nothing new from your list right now.</div>}
-          {up.map(({ x, at, film, e }) => { const n = days(at);
-            return <div className="row" key={x.key} onClick={() => trailer(x)}>
+          {up.map(({ x, at, film, e }, i) => { const n = days(at);
+            return <div className="row" key={x.key} style={{ "--i": i }} onClick={() => trailer(x)}>
               <Poster x={x} small />
               <span className="nm">{x.title}<small>{film ? (n > 0 ? "In cinemas " : "Out since ") + dayName(at) + " · " + x.why
                 : "S" + e.s + " E" + e.e + (e.name ? " · " + e.name : "") + (x.net ? " · " + x.net : "")}</small></span>
@@ -1216,8 +1252,8 @@ export const render = ({ output, tab }, dispatch) => {
             </div>; })}
         </div>
         : !p ? <div className="empty">You've seen everything on the list. Ask Claude for more picks!</div>
-        : <div>
-          <div className="hero">
+        : <div className="pane" key="you">
+          <div className="hero" key={p.key}>
             {p.poster && <div className="bg" style={{ backgroundImage: `url("${p.poster}")` }} />}
             <Poster x={p} />
             <div className="info">
@@ -1235,7 +1271,7 @@ export const render = ({ output, tab }, dispatch) => {
           </div>
           <div className="lbl top">MORE FOR YOU</div>
           <div className="more">
-            {d.more.map(x => <div className="card" key={x.key} title={x.why + " · " + meta(x)} onClick={() => trailer(x)}>
+            {d.more.map((x, i) => <div className="card" key={x.key} style={{ "--i": i }} title={x.why + " · " + meta(x)} onClick={() => trailer(x)}>
               <Poster x={x} /><div className="ct">{x.title}</div></div>)}
           </div></div>}
     </div>
