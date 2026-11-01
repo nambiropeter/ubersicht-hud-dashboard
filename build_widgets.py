@@ -430,16 +430,26 @@ export const refreshFrequency = 1000;
 export const className = `
   %%POS%%%%SHARED%%
   box-sizing: border-box; width: %%W2%%px; height: %%H2%%px; padding: 20px 20px 18px 22px;  /* same outer size as the panels below */
-  .time { display:flex; align-items:baseline; gap:8px }
-  .time b { font: 200 68px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.03em; line-height:1; color:#ffffff }
-  .time span { font: 300 22px -apple-system, sans-serif; color:#f5b14c; display:inline-block; animation: tick .4s cubic-bezier(.2,.8,.2,1) }
+  .time { display:flex; align-items:baseline; gap:8px; position:relative }
+  .time b { font: 200 68px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.03em; line-height:1; color:#ffffff;
+            filter: drop-shadow(0 0 18px rgba(255,190,110,.34)) }
+  /* the colon breathes once a second; a glowing amber bar under the time fills across each minute */
+  .time b .colon { display:inline-block; color:#f5b14c; animation: colon 1s ease-in-out infinite; will-change: opacity }
+  @keyframes colon { 50% { opacity:.2 } }
+  .time span { font: 400 22px -apple-system, sans-serif; color:#f5b14c; display:inline-block; animation: tick .4s cubic-bezier(.2,.8,.2,1) }
+  .time::after { content:""; position:absolute; left:2px; bottom:-8px; width:190px; height:2px; border-radius:2px; background: rgba(255,255,255,.07) }
+  .sec { position:absolute; z-index:1; left:2px; bottom:-8px; width:190px; height:2px; border-radius:2px; transform-origin:left;
+         background: linear-gradient(90deg, rgba(245,177,76,.2), #f5b14c 75%, #ffe3b8); box-shadow: 0 0 8px rgba(245,177,76,.7);
+         animation: secfill 60s linear both; will-change: transform }
+  @keyframes secfill { from { transform: scaleX(0) } to { transform: scaleX(1) } }
   @keyframes tick { from { opacity:0; transform: translateY(-9px) } }
   .time b { display:inline-block; animation: flip .6s cubic-bezier(.2,.8,.2,1) }
   @keyframes flip { from { opacity:.25; transform: translateY(8px); filter: blur(3px) } }
   .view.on .date, .view.on .greet { animation: rise .45s cubic-bezier(.2,.8,.2,1) backwards } .view.on .greet { animation-delay: .06s }
-  .date { margin-top:10px; font: 500 15px -apple-system, sans-serif; color:#ebe5dd }
-  .greet { margin-top:2px; font-size:12.5px; letter-spacing:.06em; color:#5f8a99 }
-  .ex { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px; margin-top:18px }
+  .date { margin-top:15px; font: 500 16px -apple-system, sans-serif; color:#ffffff; letter-spacing:.01em }
+  .date b { color:#f5b14c; font-weight:600 }
+  .greet { margin-top:2px; font-size:12.5px; letter-spacing:.06em; color:#a39a92 } .greet b { color:#ebe5dd; font-weight:600 }
+  .ex { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px; margin-top:12px }
   .cell { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:8px 11px; min-width:0 }
   .cell .c { font: 700 8.5px Orbitron, sans-serif; letter-spacing:.1em; color:#8c8178; white-space:nowrap; overflow:hidden }
   .cell .t { font-size:17px; font-weight:500; margin:3px 0 2px }
@@ -473,6 +483,13 @@ const diff = (tz, now) => { const at = z => new Date(now.toLocaleString("en-US",
   const m = Math.round((at(tz) - at()) / 60000 / 15) * 15; if (!m) return "";
   const a = Math.abs(m); return (m > 0 ? "+" : "−") + Math.floor(a / 60) + "h" + (a % 60 ? " " + a % 60 + "m" : ""); };
 const offset = (tz, now) => { const d = diff(tz, now); return !d ? "same time as you" : d + (d[0] === "+" ? " ahead" : " behind"); };
+// "21:15" with an amber breathing colon
+const HM = s => { const [a, b] = s.split(":"); return [a, <i className="colon" key="c">:</i>, b]; };
+// weekday in amber, then the date, e.g. **Sunday** 1 November
+const DATE = (now, tz) => { const o = tz ? { timeZone: tz } : {};
+  return [<b key="w">{now.toLocaleDateString("en-GB", { ...o, weekday: "long" })}</b>, " " + now.toLocaleDateString("en-GB", { ...o, day: "numeric", month: "long" })]; };
+// the minute bar starts at the current second when it mounts (new key each minute), then runs on its own
+const Sec = ({ s }) => <i className="sec" ref={el => { if (el && !el.dataset.s) { el.dataset.s = 1; el.style.animationDelay = -s + "s"; } }} />;
 const partOf = h => h < 5 ? ["night", "☾"] : h < 12 ? ["morning", "☀︎"] : h < 17 ? ["afternoon", "☀︎"] : h < 21 ? ["evening", "☾"] : ["night", "☾"];
 export const render = () => {
   const now = new Date(), h = now.getHours();
@@ -482,16 +499,16 @@ export const render = () => {
       <div className="stage">
         <div className="view on" data-k="here">
           <div className="here" title={city}><div className="f">{flag(cc)}</div><div className="n">{(cc ? region(cc) : city).toUpperCase()}</div></div>
-          <div className="time num"><b key={now.getHours() + ":" + now.getMinutes()}>{now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}</b>
-            <span key={now.getSeconds()}>{String(now.getSeconds()).padStart(2, "0")}</span></div>
-          <div className="date">{now.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
-          <div className="greet">Good {partOf(h)[0] === "night" ? "evening" : partOf(h)[0]}, Anthony</div>
+          <div className="time num"><b key={now.getHours() + ":" + now.getMinutes()}>{HM(now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }))}</b>
+            <span key={now.getSeconds()}>{String(now.getSeconds()).padStart(2, "0")}</span><Sec key={"m" + now.getMinutes()} s={now.getSeconds()} /></div>
+          <div className="date">{DATE(now)}</div>
+          <div className="greet">Good {partOf(h)[0] === "night" ? "evening" : partOf(h)[0]}, <b>Anthony</b></div>
         </div>
         {CITIES.map(c => { const t = localParts(c.tz, now); return (
           <div className="view" data-k={c.city} key={c.city}>
             <div className="here"><div className="f">{flag(c.cc)}</div><div className="n">{c.city}</div></div>
-            <div className="time num"><b key={t.hm}>{t.hm}</b><span key={now.getSeconds()}>{String(now.getSeconds()).padStart(2, "0")}</span></div>
-            <div className="date">{now.toLocaleDateString("en-GB", { timeZone: c.tz, weekday: "long", day: "numeric", month: "long" })}</div>
+            <div className="time num"><b key={t.hm}>{HM(t.hm)}</b><span key={now.getSeconds()}>{String(now.getSeconds()).padStart(2, "0")}</span><Sec key={"m" + now.getMinutes()} s={now.getSeconds()} /></div>
+            <div className="date">{DATE(now, c.tz)}</div>
             <div className="greet">{partOf(t.h)[1]} {partOf(t.h)[0]} there · {offset(c.tz, now)}</div>
           </div>); })}
       </div>
@@ -513,6 +530,67 @@ export const command = "~/.stark/weather.sh";
 export const refreshFrequency = 15 * 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
+  /* ── live sky behind the panel: real rain, sun, clouds, lightning, fog, snow, stars + moon phase ──
+     One .sky per view (now + each forecast day); only the one on screen is displayed, so the rest cost nothing.
+     Particles (rain, stars, clouds, snow) are painted once onto canvas textures and whole sheets slide, so a storm
+     is ~15 moving layers instead of 130 (each animated element is its own layer; 38 separate stars cost ~40% CPU). */
+  header, .stage, .days { position:relative; z-index:1 }
+  .sky { position:absolute; inset:0; z-index:0; pointer-events:none; overflow:hidden; border-radius:inherit; display:none }
+  .sky.on { display:block; animation: fadein .9s ease backwards }
+  .sky i, .sky b, .sky div, .sky svg { position:absolute; display:block }
+  .tint { inset:0 }
+  /* without this hint WebKit repaints wide moving layers every frame (clouds alone: ~38% CPU -> ~1%) */
+  .sun, .rays, .flares, .motes, .stars.tw, .shoot, .clouds, .sheet, .snowl, .splash, .bead, .mist, .fog, .flash { will-change: transform, opacity }
+  .sun { left:100px; top:-110px; width:220px; height:220px; border-radius:50%;
+         background: radial-gradient(circle, #fffbea 0 9%, rgba(255,236,180,.85) 11%, rgba(255,205,120,.34) 20%, rgba(255,180,90,.12) 38%, transparent 62%);
+         animation: sunpulse 7s ease-in-out infinite }
+  .sun.warm { background: radial-gradient(circle, #fff1d6 0 9%, rgba(255,190,120,.85) 11%, rgba(255,140,80,.36) 22%, rgba(255,110,70,.14) 40%, transparent 64%) }
+  @keyframes sunpulse { 50% { transform: scale(1.07); opacity:.88 } }
+  .rays { left:-140px; top:-350px; width:700px; height:700px; background-size:100% 100%; animation: spin 140s linear infinite }
+  @keyframes spin { to { transform: rotate(360deg) } }
+  .flares { inset:0; animation: flare 9s ease-in-out infinite;
+            background: radial-gradient(circle 13px at 262px 92px, rgba(255,226,170,.16), transparent),
+                        radial-gradient(circle 6px at 300px 150px, rgba(255,226,170,.2), transparent),
+                        radial-gradient(circle 20px at 348px 222px, rgba(255,226,170,.1), transparent) }
+  @keyframes flare { 50% { opacity:.35 } }
+  .motes { left:0; top:0; width:400px; height:640px; background-size:400px 320px; animation: motes 38s linear infinite, flare 6s ease-in-out infinite }
+  @keyframes motes { from { transform: translateY(0) } to { transform: translateY(-320px) } }
+  .haze { left:60px; top:-140px; width:300px; height:260px; border-radius:50%; background: radial-gradient(closest-side, rgba(255,240,215,.13), transparent) }
+  .stars { left:0; top:0; width:400px; height:240px; background-size:400px 240px }
+  .stars.tw { animation: twinkle var(--t) ease-in-out infinite; animation-delay: var(--d) }
+  @keyframes twinkle { 50% { opacity:.12 } }
+  .shoot { left:300px; top:18px; width:90px; height:1.2px; transform-origin: 0 50%; opacity:0;
+           background: linear-gradient(90deg, transparent, rgba(255,255,255,.95)); animation: shoot 13s ease-in infinite 4s }
+  @keyframes shoot { 0% { opacity:0; transform: translate(0, 0) rotate(152deg) scaleX(.2) } 1.5% { opacity:1 }
+                     5% { opacity:0; transform: translate(-170px, 92px) rotate(152deg) scaleX(1) } 100% { opacity:0 } }
+  .moonglow { left:172px; top:-16px; width:76px; height:76px; border-radius:50%; background: radial-gradient(closest-side, rgba(235,228,205,.22), transparent) }
+  .moon { left:196px; top:8px; filter: drop-shadow(0 0 5px rgba(240,232,205,.55)) }
+  .clouds { left:0; width:1440px; height:170px; background-size:720px 170px; background-repeat:repeat-x;
+            animation: drift var(--t) linear infinite; animation-delay: var(--d); animation-direction: var(--dir) }
+  @keyframes drift { from { transform: translateX(-720px) } to { transform: translateX(0) } }
+  .rain { left:-100px; top:-80px; width:600px; height:480px; transform: rotate(var(--slant)) }
+  .sheet { left:0; top:0; width:100%; height:200%; background-size:600px 480px; animation: sheet var(--t) linear infinite }
+  @keyframes sheet { from { transform: translateY(-480px) } to { transform: translateY(0) } }
+  .snowl { inset:0; animation: sway var(--s) ease-in-out infinite alternate }
+  @keyframes sway { from { transform: translateX(-10px) } to { transform: translateX(10px) } }
+  .splash { height:4px; border-radius:50%; border:1px solid rgba(200,222,255,.55); border-top-color:transparent; opacity:0;
+            animation: splash var(--t) ease-out infinite; animation-delay: var(--d) }
+  @keyframes splash { 0% { opacity:0; transform: scale(.15, .3) } 12% { opacity:.9 } 55%, 100% { opacity:0; transform: scale(1.5, 1) } }
+  .beads { inset:0; background-size:400px 320px }
+  .bead { border-radius: 50% 50% 46% 46%; box-shadow: 0 1px 1.5px rgba(0,0,0,.35);
+          background: radial-gradient(circle at 36% 30%, rgba(255,255,255,.7) 0 12%, rgba(210,225,250,.16) 45%, rgba(150,170,210,.1) 70%);
+          animation: bead var(--t) ease-in infinite; animation-delay: var(--d) }
+  @keyframes bead { 0%, 62% { transform: translateY(0); opacity:1 } 100% { transform: translateY(var(--dy)); opacity:0 } }
+  .mist { left:-30%; width:160%; bottom:-24px; height:90px; background: radial-gradient(ellipse at 50% 100%, rgba(190,205,230,.17), transparent 70%);
+          animation: fog 18s ease-in-out infinite alternate }
+  .fog { left:-200px; top:0; width:800px; height:320px; animation: fog var(--t) ease-in-out infinite alternate; animation-delay: var(--d) }
+  @keyframes fog { from { transform: translateX(-60px) } to { transform: translateX(60px) } }
+  .flash { inset:0; opacity:0; background: radial-gradient(120% 90% at var(--fx) 0%, rgba(205,215,255,.42), rgba(150,165,255,.12) 55%, transparent 80%);
+           animation: flash var(--t) linear infinite; animation-delay: var(--d) }
+  .flash.far { animation-name: farflash }
+  .flash svg { left:0; top:0; filter: drop-shadow(0 0 3px #dfe5ff) drop-shadow(0 0 9px rgba(150,170,255,.9)) }
+  @keyframes flash { 0%, 100% { opacity:0 } .6% { opacity:1 } 1.4% { opacity:.1 } 2.2% { opacity:.95 } 3.2% { opacity:.25 } 4.4% { opacity:0 } }
+  @keyframes farflash { 0%, 100% { opacity:0 } 1% { opacity:.4 } 2% { opacity:0 } 2.8% { opacity:.25 } 4% { opacity:0 } }
   .stage { display:grid }
   .view { grid-area: 1 / 1; opacity:0; visibility:hidden; transition: opacity .25s, visibility .25s }
   .view.on { opacity:1; visibility:visible }
@@ -546,11 +624,141 @@ const WMO = { 0:["Clear","☀️","🌙"], 1:["Mostly clear","🌤","🌙"], 2:[
   45:["Fog","🌫","🌫"], 48:["Fog","🌫","🌫"], 51:["Drizzle","🌦","🌧"], 53:["Drizzle","🌦","🌧"], 55:["Drizzle","🌧","🌧"],
   61:["Light rain","🌦","🌧"], 63:["Rain","🌧","🌧"], 65:["Heavy rain","🌧","🌧"], 80:["Showers","🌦","🌧"], 81:["Showers","🌧","🌧"],
   82:["Heavy showers","⛈","⛈"], 95:["Thunderstorm","⛈","⛈"], 96:["Thunderstorm","⛈","⛈"], 99:["Thunderstorm","⛈","⛈"] };
+Object.assign(WMO, { 56:["Freezing drizzle","🌧","🌧"], 57:["Freezing drizzle","🌧","🌧"], 66:["Freezing rain","🌧","🌧"], 67:["Freezing rain","🌧","🌧"],
+  71:["Light snow","🌨","🌨"], 73:["Snow","🌨","🌨"], 75:["Heavy snow","❄️","❄️"], 77:["Snow grains","🌨","🌨"], 85:["Snow showers","🌨","🌨"], 86:["Snow showers","❄️","❄️"] });
 const wmo = (c, day = 1) => { const w = WMO[c] || ["—", "🌡", "🌡"]; return [w[0], day ? w[1] : w[2]]; };
+// ── Sky: what the weather actually looks like, drawn behind the panel ──
+// [kind, intensity] from the WMO code
+const KIND = c => c === 0 ? ["clear", 0] : c === 1 ? ["clear", 1] : c === 2 ? ["partly", 0] : c === 3 ? ["overcast", 0]
+  : c === 45 || c === 48 ? ["fog", 0] : c >= 51 && c <= 57 ? ["drizzle", c >= 55 ? 1 : 0]
+  : [61, 66, 80].includes(c) ? ["rain", 0] : [63, 81].includes(c) ? ["rain", 1] : [65, 67, 82].includes(c) ? ["rain", 2]
+  : (c >= 71 && c <= 77) || c === 85 || c === 86 ? ["snow", c === 75 || c === 86 ? 2 : 1] : c >= 95 ? ["storm", c > 95 ? 2 : 1] : ["partly", 0];
+// seeded random, so the same weather always draws the same scene (and re-renders don't reshuffle it)
+const rng = s => () => { s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+// particles are painted once onto a canvas and used as a background image (cached per scene)
+const TEX = window.__wxTex || (window.__wxTex = new Map());
+const tex = (key, w, h, s, draw) => { let u = TEX.get(key); if (u) return u; if (TEX.size > 48) TEX.clear();
+  const cv = document.createElement("canvas"); cv.width = Math.round(w * s); cv.height = Math.round(h * s);
+  const g = cv.getContext("2d"); g.scale(s, s); draw(g); u = `url(${cv.toDataURL()})`; TEX.set(key, u); return u; };
+const dot = (g, x, y, rad, col, glow = 0) => { g.shadowBlur = glow; g.shadowColor = col; g.fillStyle = col; g.beginPath(); g.arc(x, y, rad, 0, 7); g.fill(); };
+// one depth of rain (or snow): a 600×480 tile that wraps top-to-bottom, so the sheet can loop forever
+const RW = 600, RH = 480;
+const rainTex = (key, r, n, h0, h1, wd, op) => tex(key, RW, RH, 1.5, g => { g.lineCap = "round"; g.lineWidth = wd;
+  for (let i = 0; i < n; i++) { const x = r() * RW, y = r() * RH, h = h0 + r() * (h1 - h0), o = (op * (.6 + r() * .4)).toFixed(2);
+    for (const yy of [y, y - RH]) { const gr = g.createLinearGradient(0, yy, 0, yy + h);
+      gr.addColorStop(0, "rgba(200,222,255,0)"); gr.addColorStop(1, `rgba(200,222,255,${o})`);
+      g.strokeStyle = gr; g.beginPath(); g.moveTo(x, yy); g.lineTo(x, yy + h); g.stroke(); } } });
+const snowTex = (key, r, n, s0, s1) => tex(key, RW, RH, 1.5, g => { for (let i = 0; i < n; i++) { const x = r() * RW, y = r() * RH, s = s0 + r() * (s1 - s0);
+  for (const yy of [y, y - RH]) dot(g, x, yy, s / 2, "rgba(255,255,255,.88)", 3); } });
+// a 720-wide strip of soft puffy clouds that wraps left-to-right
+const cloudTex = (key, r, n, [cr, cg, cb, ca]) => tex(key, 720, 170, 1, g => {
+  for (let c = 0; c < n; c++) { const w = 130 + r() * 130, x0 = r() * 720, base = 70 + r() * 70, k = 7;
+    for (let i = 0; i < k; i++) { const f = i / (k - 1), x = x0 + w * f * .85 + (r() - .5) * 10, y = base - Math.sin(Math.PI * f) * w * .16 - r() * 8;
+      const rad = w * (.13 + Math.sin(Math.PI * f) * .13) * (.85 + r() * .3);
+      for (const xx of [x, x - 720, x + 720]) { const gr = g.createRadialGradient(xx, y, 0, xx, y, rad);
+        gr.addColorStop(0, `rgba(${cr},${cg},${cb},${ca})`); gr.addColorStop(.55, `rgba(${cr},${cg},${cb},${ca * .75})`); gr.addColorStop(1, `rgba(${cr},${cg},${cb},0)`);
+        g.fillStyle = gr; g.fillRect(xx - rad, y - rad, rad * 2, rad * 2); } } } });
+const starTex = (key, r, n, big) => tex(key, 400, 240, 2, g => { for (let i = 0; i < n; i++)
+  dot(g, r() * 400, r() * 236 + 2, big ? .7 + r() * .6 : .35 + r() * .5, `rgba(255,255,255,${(big ? .75 : .35) + r() * .25})`, big ? 4 : 0); });
+const raysTex = () => tex("rays", 700, 700, .75, g => { const r = rng(7);
+  for (let a = 0; a < 360; a += 6 + r() * 9) { const w = (1.2 + r() * 3) * Math.PI / 180, t = a * Math.PI / 180, al = .04 + r() * .07;
+    const gr = g.createRadialGradient(350, 350, 0, 350, 350, 350); gr.addColorStop(0, `rgba(255,228,170,${al})`); gr.addColorStop(.12, `rgba(255,228,170,${al})`); gr.addColorStop(.6, "rgba(255,228,170,0)");
+    g.fillStyle = gr; g.beginPath(); g.moveTo(350, 350); g.arc(350, 350, 350, t, t + w); g.closePath(); g.fill(); } });
+const motesTex = r => tex("motes", 400, 320, 2, g => { for (let i = 0; i < 14; i++) dot(g, r() * 400, r() * 320, .9 + r() * .6, "rgba(255,240,205,.75)", 3); });
+const beadsTex = (key, r) => tex(key, 400, 320, 2, g => { for (let i = 0; i < 7; i++) { const x = 10 + r() * 380, y = 15 + r() * 250, s = 1.4 + r() * 2;
+  dot(g, x, y + 1, s, "rgba(0,0,0,.25)", 1); const gr = g.createRadialGradient(x - s * .3, y - s * .4, 0, x, y, s);
+  gr.addColorStop(0, "rgba(255,255,255,.7)"); gr.addColorStop(.3, "rgba(210,225,250,.18)"); gr.addColorStop(1, "rgba(150,170,210,.12)");
+  g.shadowBlur = 0; g.fillStyle = gr; g.beginPath(); g.arc(x, y, s, 0, 7); g.fill(); } });
+// moon phase 0..1 (0 new, .5 full) from a known new moon, drawn as the real lit shape
+const moonPhase = () => (((Date.now() - Date.UTC(2000, 0, 6, 18, 14)) / 864e5 / 29.530589) % 1 + 1) % 1;
+const Moon = ({ p, r = 12 }) => { const k = Math.cos(2 * Math.PI * p), rx = Math.abs(k) * r, wax = p < .5;
+  const lit = `M0 ${-r}A${r} ${r} 0 0 ${wax ? 1 : 0} 0 ${r}A${rx.toFixed(2)} ${r} 0 0 ${(wax ? k > 0 : k < 0) ? 0 : 1} 0 ${-r}Z`;
+  return (<svg className="moon" width={r * 2 + 2} height={r * 2 + 2} viewBox={`${-r - 1} ${-r - 1} ${r * 2 + 2} ${r * 2 + 2}`}>
+    <circle r={r} fill="rgba(200,205,225,.09)" /><path d={lit} fill="#f3ecd6" />
+    <circle cx={-3} cy={-4} r={2.4} fill="rgba(150,140,120,.22)" /><circle cx={4} cy={3} r={1.8} fill="rgba(150,140,120,.2)" /><circle cx={-1} cy={6} r={1.2} fill="rgba(150,140,120,.18)" />
+  </svg>); };
+// jagged lightning bolt from the cloud base down, with one side branch
+const boltPath = (r, x, end) => { let y = -4, d = `M${x.toFixed(0)} ${y}`, br = "";
+  while (y < end) { y += 9 + r() * 15; x += (r() - .5) * 28; d += `L${x.toFixed(0)} ${y.toFixed(0)}`;
+    if (!br && y > end * .3 && r() < .45) { let bx = x, by = y; const s = r() < .5 ? -1 : 1; br = `M${bx.toFixed(0)} ${by.toFixed(0)}`;
+      for (let j = 0; j < 4; j++) { by += 8 + r() * 11; bx += s * (6 + r() * 11); br += `L${bx.toFixed(0)} ${by.toFixed(0)}`; } } }
+  return [d, br]; };
+const TINT = { clear: "linear-gradient(180deg, rgba(64,128,210,.26), rgba(64,128,210,.04) 70%)",
+  partly: "linear-gradient(180deg, rgba(84,130,196,.22), rgba(84,130,196,.03) 75%)",
+  overcast: "linear-gradient(180deg, rgba(122,128,140,.28), rgba(90,95,105,.08))",
+  fog: "linear-gradient(180deg, rgba(170,172,180,.16), rgba(205,207,213,.2))",
+  drizzle: "linear-gradient(180deg, rgba(92,106,126,.32), rgba(60,70,88,.1))",
+  rain: "linear-gradient(180deg, rgba(56,74,104,.44), rgba(30,40,60,.14))",
+  snow: "linear-gradient(180deg, rgba(160,180,215,.24), rgba(220,228,240,.1))",
+  storm: "linear-gradient(180deg, rgba(24,24,50,.66), rgba(14,14,28,.3))" };
+const NIGHT = "linear-gradient(180deg, rgba(14,22,62,.5), rgba(8,10,28,.18) 80%)";
+const GOLDEN = "linear-gradient(180deg, rgba(92,72,150,.16), rgba(255,128,80,.2) 72%, rgba(255,176,96,.16))";
+const CLOUD = { storm: [[48, 50, 68, .62], [26, 27, 40, .8]], rain: [[86, 96, 116, .5], [58, 66, 84, .66]],
+  overcast: [[160, 166, 178, .3], [128, 134, 146, .4]], drizzle: [[160, 166, 178, .3], [128, 134, 146, .4]],
+  snow: [[200, 208, 222, .34], [200, 208, 222, .34]], fair: [[255, 255, 255, .11], [255, 255, 255, .15]], night: [[130, 140, 170, .2], [130, 140, 170, .2]] };
+// wind (km/h) and its compass direction tilt the rain and set which way + how fast the clouds sail
+const Sky = ({ k, code, night = false, phase = "", wind = 8, dir = 90, on = false }) => {
+  const [kind, lvl] = KIND(code), seed = code * 131 + (night ? 17 : 0) + k.charCodeAt(k.length - 1), r = rng(seed), R = (a, b) => a + r() * (b - a);
+  const id = `${kind}${lvl}${night ? "n" : ""}-${seed}-`;
+  const wet = kind === "rain" || kind === "drizzle" || kind === "storm", fair = kind === "clear" || kind === "partly", out = [];
+  const sx = Math.sin(dir * Math.PI / 180);  // wind FROM the east (+) blows west, i.e. leftwards on screen
+  const slant = (Math.min(30, 3 + wind * .8) * sx).toFixed(1) + "deg", flow = sx > 0 ? "reverse" : "normal";
+  const sunny = !night && fair, golden = phase && !wet && kind !== "fog";
+  let bg = night && fair ? NIGHT : TINT[kind]; if (night && !fair) bg = "linear-gradient(rgba(4,6,18,.4), rgba(4,6,18,.25)), " + bg;
+  if (golden) bg = GOLDEN + ", " + bg;
+  out.push(<i className="tint" key="t" style={{ background: bg }} />);
+  if (sunny) {
+    out.push(<i className="rays" key="ry" style={{ backgroundImage: raysTex() }} />, <i className={"sun" + (phase ? " warm" : "")} key="sn" />, <i className="flares" key="fl" />);
+    if (kind === "clear") out.push(<i className="motes" key="mo" style={{ backgroundImage: motesTex(rng(3)) }} />);
+  }
+  if (!night && (kind === "overcast" || kind === "drizzle" || kind === "fog")) out.push(<i className="haze" key="hz" />);
+  if (night && fair) {
+    const n = kind === "clear" ? 1 : .6;
+    out.push(<i className="stars" key="st" style={{ backgroundImage: starTex(id + "s0", rng(seed + 1), 40 * n) }} />);
+    [[3.1, -1], [4.7, -3]].forEach(([t, d], i) => out.push(<i className="stars tw" key={"tw" + i} style={{ backgroundImage: starTex(id + "s" + (i + 1), rng(seed + 2 + i), 9 * n, true), "--t": t + "s", "--d": d + "s" }} />));
+    if (kind === "clear") out.push(<i className="shoot" key="sh" />);
+    out.push(<i className="moonglow" key="mg" />, <Moon key="mn" p={moonPhase()} />);
+  }
+  // clouds: a slow far layer and a faster, darker near one
+  const nC = { clear: lvl ? 2 : 0, partly: 4, overcast: 7, fog: 0, drizzle: 6, rain: 7, snow: 6, storm: 8 }[kind];
+  if (nC) { const cols = CLOUD[kind] || (night ? CLOUD.night : CLOUD.fair), T0 = Math.max(35, Math.min(220, 2600 / (wind + 4))) * 1.8;
+    [0, 1].forEach(f => { const T = T0 * (f ? .72 : 1.2), col = cols[f].slice(); if (night && !fair) col[3] *= .8;
+      out.push(<i className="clouds" key={"cl" + f} style={{ top: (f ? -20 : -50) + (fair ? 20 : 0), backgroundImage: cloudTex(id + "c" + f, rng(seed + 5 + f), Math.max(1, Math.round(nC / 2 * 1.8)), col),
+        "--t": T.toFixed(1) + "s", "--d": -R(0, T).toFixed(1) + "s", "--dir": flow }} />); }); }
+  if (kind === "fog") [0, 1].forEach(f => { const b = [0, 1, 2].map(() => `radial-gradient(ellipse ${R(240, 380).toFixed(0)}px ${R(36, 64).toFixed(0)}px at ${R(15, 85).toFixed(0)}% ${R(5, 95).toFixed(0)}%, rgba(225,227,233,${R(.14, .26).toFixed(2)}), transparent)`);
+    out.push(<i className="fog" key={"fg" + f} style={{ background: b.join(", "), "--t": R(16, 28).toFixed(1) + "s", "--d": -R(0, 20).toFixed(1) + "s" }} />); });
+  if (wet) { const n = kind === "drizzle" ? 34 + lvl * 14 : kind === "rain" ? [46, 66, 90][lvl] : [84, 100][lvl - 1], sheets = [];
+    // far / mid / near: thinner, fainter, shorter and slower the further away
+    [[.45, .8, .3, .7, 1.3], [.33, 1.1, .45, .9, 1], [.22, 1.5, .62, 1.15, .78]].forEach(([part, wd, op, len, spd], z) => {
+      const [h0, h1] = kind === "drizzle" ? [6, 10] : kind === "rain" ? [11 + lvl * 3, 19 + lvl * 3] : [17, 28];
+      const per = (kind === "drizzle" ? 1.35 : kind === "rain" ? .85 - lvl * .08 : .52) * spd;
+      sheets.push(<i className="sheet" key={z} style={{ backgroundImage: rainTex(id + "r" + z, rng(seed + 8 + z), Math.round(n * part * 1.4), h0 * len, h1 * len, wd, op), "--t": per.toFixed(2) + "s" }} />); });
+    out.push(<div className="rain" key="rn" style={{ "--slant": slant }}>{sheets}</div>);
+    if (kind !== "drizzle") for (let i = 0; i < 4 + lvl * 2; i++)
+      out.push(<i className="splash" key={"sp" + i} style={{ left: R(2, 96) + "%", bottom: R(2, 16), width: R(7, 14), "--t": R(.6, 1.1).toFixed(2) + "s", "--d": -R(0, 1.1).toFixed(2) + "s" }} />);
+    out.push(<i className="beads" key="bd" style={{ backgroundImage: beadsTex(id + "b", rng(seed + 12)) }} />);
+    for (let i = 0; i < 2; i++) { const s = R(4, 6.5);
+      out.push(<i className="bead" key={"b" + i} style={{ left: R(10, 90) + "%", top: R(8, 50) + "%", width: s, height: s * 1.12, "--t": R(9, 15).toFixed(1) + "s", "--d": -R(0, 15).toFixed(1) + "s", "--dy": R(110, 220).toFixed(0) + "px" }} />); }
+    if (kind === "storm" || lvl >= 2) out.push(<i className="mist" key="ms" />);
+  }
+  if (kind === "storm") { [[R(60, 170), 6.3, -R(0, 6)], [R(230, 350), 9.7, -R(0, 9)]].forEach(([x, T, dl], i) => {
+    const [main, branch] = boltPath(r, x, R(150, 260));
+    out.push(<div className="flash" key={"fx" + i} style={{ "--fx": (x / 4).toFixed(0) + "%", "--t": T + "s", "--d": dl.toFixed(2) + "s" }}>
+      <svg width="400" height="320"><path d={main} fill="none" stroke="#f2f4ff" strokeWidth="1.9" strokeLinejoin="round" />
+        {branch && <path d={branch} fill="none" stroke="#e6ebff" strokeWidth="1.1" strokeLinejoin="round" />}</svg></div>); });
+    out.push(<i className="flash far" key="ff" style={{ "--fx": "70%", "--t": "4.3s", "--d": "-1.7s" }} />); }
+  if (kind === "snow") out.push(<div className="snowl" key="sw" style={{ "--s": "4.2s" }}><div className="rain" style={{ "--slant": (parseFloat(slant) / 2) + "deg" }}>
+    {[[.55, 1.2, 2.4, 11], [.45, 2.2, 4, 7]].map(([part, s0, s1, per], z) =>
+      <i className="sheet" key={z} style={{ backgroundImage: snowTex(id + "w" + z, rng(seed + 14 + z), Math.round([0, 40, 70][lvl] * part * 1.4), s0, s1), "--t": per + "s" }} />)}</div></div>);
+  return <div className={"sky" + (on ? " on" : "")} data-k={k} data-kind={kind}>{out}</div>;
+};
+// golden hour around sunrise and sunset (now only)
+const phaseOf = d => { const now = Date.now(), H = 50 * 60e3;
+  return Math.abs(now - new Date(d.sunrise[0])) < H ? "dawn" : Math.abs(now - new Date(d.sunset[0])) < H ? "dusk" : ""; };
 const hm = s => (s || "").slice(11, 16);
 // Hover a day to put its full forecast where "now" is; leaving the panel (or 8 s idle) brings now back, like Tech Markets.
 const pick = (root, k) => { if (!root) return;
-  root.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.dataset.k === k));
+  root.querySelectorAll(".view, .sky").forEach(v => v.classList.toggle("on", v.dataset.k === k));
   root.querySelectorAll(".d").forEach(v => v.classList.toggle("sel", v.dataset.k === k)); };
 // Übersicht sends no mouseleave when the mouse leaves into a gap between panels, hence the idle fallback.
 const home = e => { const el = e.currentTarget; clearTimeout(window.__wxHome); window.__wxHome = setTimeout(() => pick(el, "now"), 8000); };
@@ -579,7 +787,10 @@ export const render = ({ output }) => {
   if (!ok) return <div>{head}</div>;
   const c = w.current, d = w.daily, [label, icon] = wmo(c.weather_code, c.is_day);
   return (
-    <div onMouseLeave={e => pick(e.currentTarget, "now")} onMouseMove={home}>{head}
+    <div onMouseLeave={e => pick(e.currentTarget, "now")} onMouseMove={home}>
+      <Sky k="now" on code={c.weather_code} night={!c.is_day} phase={phaseOf(d)} wind={c.wind_speed_10m} dir={c.wind_direction_10m ?? 90} />
+      {d.time.slice(1, 6).map((t, i) => <Sky key={"s" + t} k={"d" + (i + 1)} code={d.weather_code[i + 1]} wind={(d.wind_speed_10m_max?.[i + 1] ?? 10) * .6} dir={d.wind_direction_10m_dominant?.[i + 1] ?? 90} />)}
+      {head}
       <div className="stage">
       <div className="view on" data-k="now">
       <div className="main">
