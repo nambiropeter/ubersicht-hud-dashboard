@@ -433,18 +433,9 @@ export const className = `
   .time { display:flex; align-items:baseline; gap:8px; position:relative }
   .time b { font: 200 68px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.03em; line-height:1; color:#ffffff;
             filter: drop-shadow(0 0 18px rgba(255,190,110,.34)) }
-  /* the colon breathes once a second; a glowing amber bar under the time fills across each minute */
-  .time b .colon { display:inline-block; color:#f5b14c; animation: colon 1s ease-in-out infinite; will-change: opacity }
-  @keyframes colon { 50% { opacity:.2 } }
-  .time span { font: 400 22px -apple-system, sans-serif; color:#f5b14c; display:inline-block; animation: tick .4s cubic-bezier(.2,.8,.2,1) }
-  .time::after { content:""; position:absolute; left:2px; bottom:-8px; width:190px; height:2px; border-radius:2px; background: rgba(255,255,255,.07) }
-  .sec { position:absolute; z-index:1; left:2px; bottom:-8px; width:190px; height:2px; border-radius:2px; transform-origin:left;
-         background: linear-gradient(90deg, rgba(245,177,76,.2), #f5b14c 75%, #ffe3b8); box-shadow: 0 0 8px rgba(245,177,76,.7);
-         animation: secfill 60s linear both; will-change: transform }
-  @keyframes secfill { from { transform: scaleX(0) } to { transform: scaleX(1) } }
-  @keyframes tick { from { opacity:0; transform: translateY(-9px) } }
-  .time b { display:inline-block; animation: flip .6s cubic-bezier(.2,.8,.2,1) }
-  @keyframes flip { from { opacity:.25; transform: translateY(8px); filter: blur(3px) } }
+  /* static on purpose: the ticking/flip/minute-bar animations looked unbalanced (removed 2026-11-02) */
+  .time b .colon { color:#f5b14c }
+  .time span { font: 400 22px -apple-system, sans-serif; color:#f5b14c }
   .view.on .date, .view.on .greet { animation: rise .45s cubic-bezier(.2,.8,.2,1) backwards } .view.on .greet { animation-delay: .06s }
   .date { margin-top:15px; font: 500 16px -apple-system, sans-serif; color:#ffffff; letter-spacing:.01em }
   .date b { color:#f5b14c; font-weight:600 }
@@ -483,13 +474,11 @@ const diff = (tz, now) => { const at = z => new Date(now.toLocaleString("en-US",
   const m = Math.round((at(tz) - at()) / 60000 / 15) * 15; if (!m) return "";
   const a = Math.abs(m); return (m > 0 ? "+" : "−") + Math.floor(a / 60) + "h" + (a % 60 ? " " + a % 60 + "m" : ""); };
 const offset = (tz, now) => { const d = diff(tz, now); return !d ? "same time as you" : d + (d[0] === "+" ? " ahead" : " behind"); };
-// "21:15" with an amber breathing colon
+// "21:15" with an amber colon
 const HM = s => { const [a, b] = s.split(":"); return [a, <i className="colon" key="c">:</i>, b]; };
 // weekday in amber, then the date, e.g. **Sunday** 1 November
 const DATE = (now, tz) => { const o = tz ? { timeZone: tz } : {};
   return [<b key="w">{now.toLocaleDateString("en-GB", { ...o, weekday: "long" })}</b>, " " + now.toLocaleDateString("en-GB", { ...o, day: "numeric", month: "long" })]; };
-// the minute bar starts at the current second when it mounts (new key each minute), then runs on its own
-const Sec = ({ s }) => <i className="sec" ref={el => { if (el && !el.dataset.s) { el.dataset.s = 1; el.style.animationDelay = -s + "s"; } }} />;
 const partOf = h => h < 5 ? ["night", "☾"] : h < 12 ? ["morning", "☀︎"] : h < 17 ? ["afternoon", "☀︎"] : h < 21 ? ["evening", "☾"] : ["night", "☾"];
 export const render = () => {
   const now = new Date(), h = now.getHours();
@@ -499,15 +488,15 @@ export const render = () => {
       <div className="stage">
         <div className="view on" data-k="here">
           <div className="here" title={city}><div className="f">{flag(cc)}</div><div className="n">{(cc ? region(cc) : city).toUpperCase()}</div></div>
-          <div className="time num"><b key={now.getHours() + ":" + now.getMinutes()}>{HM(now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }))}</b>
-            <span key={now.getSeconds()}>{String(now.getSeconds()).padStart(2, "0")}</span><Sec key={"m" + now.getMinutes()} s={now.getSeconds()} /></div>
+          <div className="time num"><b>{HM(now.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" }))}</b>
+            <span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
           <div className="date">{DATE(now)}</div>
           <div className="greet">Good {partOf(h)[0] === "night" ? "evening" : partOf(h)[0]}, <b>Anthony</b></div>
         </div>
         {CITIES.map(c => { const t = localParts(c.tz, now); return (
           <div className="view" data-k={c.city} key={c.city}>
             <div className="here"><div className="f">{flag(c.cc)}</div><div className="n">{c.city}</div></div>
-            <div className="time num"><b key={t.hm}>{HM(t.hm)}</b><span key={now.getSeconds()}>{String(now.getSeconds()).padStart(2, "0")}</span><Sec key={"m" + now.getMinutes()} s={now.getSeconds()} /></div>
+            <div className="time num"><b>{HM(t.hm)}</b><span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
             <div className="date">{DATE(now, c.tz)}</div>
             <div className="greet">{partOf(t.h)[1]} {partOf(t.h)[0]} there · {offset(c.tz, now)}</div>
           </div>); })}
