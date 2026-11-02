@@ -434,7 +434,7 @@ export const className = `
   .time b { font: 200 68px -apple-system, "SF Pro Display", sans-serif; letter-spacing:-.03em; line-height:1; color:#ffffff;
             filter: drop-shadow(0 0 18px rgba(255,190,110,.34)) }
   /* static on purpose: the ticking/flip/minute-bar animations looked unbalanced (removed 2026-11-02) */
-  .time b .colon { color:#f5b14c }
+  .time b .colon { color:#f5b14c; font-feature-settings: "case" 1; margin: 0 .04em }  /* "case" centres the colon on the digits */
   .time span { font: 400 22px -apple-system, sans-serif; color:#f5b14c }
   .view.on .date, .view.on .greet { animation: rise .45s cubic-bezier(.2,.8,.2,1) backwards } .view.on .greet { animation-delay: .06s }
   .date { margin-top:15px; font: 500 16px -apple-system, sans-serif; color:#ffffff; letter-spacing:.01em }
