@@ -1361,84 +1361,134 @@ export const render = (s, dispatch) => {
 };''')
 
 # ───────────────────────── WATCH ─────────────────────────
-widget("watch", r'''// Movies & shows picked for your taste (picks.py): today's pick with a trailer, more picks, and what's coming up
-// (DC / Marvel films with countdowns, new episodes of the shows on the list). Seen / not-for-me never come back.
+widget("watch", r'''// Movies & shows picked for your taste (picks.py): today's pick with trailer & stream options,
+// more picks by taste/genre, coming soon countdowns, and a personal watched history with unmark/restore.
 import { run } from "uebersicht";
 export const command = "%%PY%% ~/.stark/picks.py";
 export const refreshFrequency = 30 * 60 * 1000;
 export const className = `
   %%POS%%%%SHARED%%
   .seg { display:inline-flex; gap:2px; padding:2px; border-radius:7px; background:rgba(0,0,0,.18); vertical-align:middle }
-  .seg span { padding:2px 7px; border-radius:5px; font-size:8.5px; font-weight:700; letter-spacing:.12em; color:#8c8178; cursor:pointer }
-  .seg span:hover { color:#e6dcd2 } .seg .on { background:rgba(255,255,255,.08); color:#fff7ee }
-  .hero { display:flex; gap:16px; margin:2px 20px 12px; padding:12px; border-radius:14px; position:relative; overflow:hidden;
-          background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.06) }
-  .hero .bg { position:absolute; inset:0; opacity:.18; filter:blur(28px) saturate(140%); background-size:cover; background-position:center }
-  .poster { flex:none; border-radius:9px; object-fit:cover; background:linear-gradient(160deg, #3a2e25, #1a1512); position:relative }
-  .hero .poster { width:98px; height:146px; box-shadow:0 8px 22px rgba(0,0,0,.45) }
-  .hero .info { position:relative; min-width:0; flex:1; display:flex; flex-direction:column }
-  .ttl { font-size:18px; font-weight:600; color:#fff7ee; line-height:1.2; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-  .meta { font-size:11px; color:#a39a92; margin-top:3px }
-  .blurb { font-size:11.5px; line-height:1.45; color:#c9bfb5; margin-top:6px; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden }
-  .acts { display:flex; gap:6px; margin-top:auto; padding-top:8px }
-  .act { height:24px; padding:0 10px; border-radius:7px; display:grid; place-items:center; cursor:pointer; font-size:9px; font-weight:700; letter-spacing:.1em;
-         color:#d9cfc6; background:rgba(255,255,255,.07) }
+  .seg span { padding:2px 7px; border-radius:5px; font-size:8.5px; font-weight:700; letter-spacing:.1em; color:#8c8178; cursor:pointer }
+  .seg span:hover { color:#e6dcd2 } .seg .on { background:rgba(255,255,255,.09); color:#fff7ee }
+  
+  .genre-bar { display:flex; gap:4px; padding:0 20px 8px; overflow-x:auto; scrollbar-width:none }
+  .genre-bar::-webkit-scrollbar { display:none }
+  .gpill { padding:2px 7px; border-radius:5px; font-size:8px; font-weight:700; letter-spacing:.08em; color:#7d756e;
+           background:rgba(255,255,255,.03); cursor:pointer; white-space:nowrap; border:1px solid transparent; transition:all .15s }
+  .gpill:hover { color:#e6dcd2; background:rgba(255,255,255,.07) }
+  .gpill.on { background:rgba(255,179,92,.12); color:#ffb35c; border-color:rgba(255,179,92,.25) }
+
+  .hero { display:flex; gap:14px; margin:0 20px 8px; padding:10px 12px; border-radius:12px; position:relative; overflow:hidden;
+          background:rgba(255,255,255,.035); border:1px solid rgba(255,255,255,.06); box-shadow:inset 0 1px 0 rgba(255,255,255,.04) }
+  .hero .bg { position:absolute; inset:0; opacity:.16; filter:blur(28px) saturate(140%); background-size:cover; background-position:center }
+  .poster { flex:none; border-radius:7px; object-fit:cover; background:linear-gradient(160deg, #3a2e25, #1a1512); position:relative }
+  .hero .poster { width:90px; height:134px; box-shadow:0 8px 22px rgba(0,0,0,.5); border:1px solid rgba(255,255,255,.08) }
+  .hero .info { position:relative; min-width:0; flex:1; display:flex; flex-direction:column; justify-content:space-between }
+  .top-meta { display:flex; align-items:center; justify-content:space-between; gap:6px }
+  .tag-lbl { font: 700 8px Orbitron, sans-serif; letter-spacing:.2em; color:#ffb35c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .rate-badge { display:inline-flex; align-items:center; gap:2px; padding:1px 5px; border-radius:4px; font-size:9px; font-weight:700;
+                color:#ffd166; background:rgba(255,209,102,.12); border:1px solid rgba(255,209,102,.2) }
+  .ttl { font-size:16px; font-weight:600; color:#fff7ee; line-height:1.2; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .meta { font-size:10.5px; color:#a39a92; margin-top:2px }
+  .blurb { font-size:11px; line-height:1.4; color:#c9bfb5; margin-top:4px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden }
+  .acts { display:flex; gap:5px; margin-top:6px; flex-wrap:wrap }
+  .act { height:22px; padding:0 8px; border-radius:6px; display:grid; place-items:center; cursor:pointer; font-size:8.5px; font-weight:700; letter-spacing:.08em;
+         color:#d9cfc6; background:rgba(255,255,255,.07); transition: background .15s, color .15s, transform .1s }
   .act:hover { background:rgba(255,255,255,.13); color:#fff7ee }
-  .act { transition: background .2s, color .2s, transform .12s } .act:active { transform: scale(.94) }
+  .act:active { transform: scale(.95) }
   .act.main { color:#241b16; background:#ffb35c } .act.main:hover { background:#ffc47e; color:#241b16 }
-  .more { display:grid; grid-template-columns: repeat(6, 1fr); gap:9px; padding:6px 20px 0 }
-  .card { min-width:0; cursor:pointer }
-  .card { animation: rise .5s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(.15s + var(--i) * 60ms) }
-  .card .poster { width:100%; height:150px; display:block; transition: transform .3s cubic-bezier(.2,.8,.2,1), box-shadow .3s }
-  .card:hover .poster { transform: translateY(-5px) scale(1.03); box-shadow: 0 12px 24px rgba(0,0,0,.5) }
-  .pane { animation: fadein .35s ease-out }
-  .hero { animation: rise .5s cubic-bezier(.2,.8,.2,1) }
-  .hero .poster { animation: fadein .6s ease-out }
-  .card .ct { font-size:10.5px; color:#d9cfc6; margin-top:5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .act.stream { color:#ffb35c; background:rgba(255,179,92,.1); border:1px solid rgba(255,179,92,.25) }
+  .act.stream:hover { background:rgba(255,179,92,.2); color:#ffe2b8 }
+
+  .more { display:grid; grid-template-columns: repeat(6, 1fr); gap:8px; padding:2px 20px 0 }
+  .card { min-width:0; cursor:pointer; position:relative }
+  .card { animation: rise .45s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(.1s + var(--i) * 50ms) }
+  .card .poster { width:100%; height:120px; display:block; border-radius:6px; border:1px solid rgba(255,255,255,.06);
+                  transition: transform .25s cubic-bezier(.2,.8,.2,1), box-shadow .25s, border-color .25s }
+  .card:hover .poster { transform: translateY(-4px) scale(1.03); box-shadow: 0 10px 20px rgba(0,0,0,.6); border-color:rgba(255,179,92,.4) }
+  .card.sel .poster { border-color:#ffb35c; box-shadow:0 0 10px rgba(255,179,92,.3) }
+  .card .c-rate { position:absolute; top:3px; right:3px; font-size:7.5px; font-weight:700; padding:1px 3px; border-radius:3px;
+                  background:rgba(0,0,0,.75); color:#ffd166; backdrop-filter:blur(3px) }
+  .card .ct { font-size:9.5px; font-weight:500; color:#c9bfb5; margin-top:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
   .card:hover .ct { color:#fff7ee }
-  .np { display:grid; place-items:center; padding:8px; text-align:center; font-size:11px; font-weight:600; color:#d9cfc6 }
-  .lbl.top { padding:0 20px }
-  .list { padding:0 10px }
-  .row { display:grid; grid-template-columns: 34px 1fr auto; align-items:center; gap:12px; height:54px; padding:0 10px; border-radius:9px; cursor:pointer;
-         transition: background .2s; animation: rise .45s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(var(--i) * 55ms) }
-  .row .poster { transition: transform .25s cubic-bezier(.2,.8,.2,1) } .row:hover .poster { transform: scale(1.08) rotate(-2deg) }
-  .row:hover { background:rgba(255,179,92,.08) }
-  .row .poster { width:34px; height:48px; border-radius:5px }
-  .nm { min-width:0; font-size:13px; color:#e6dcd2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-  .nm small { display:block; font-size:10.5px; color:#857d75; margin-top:2px; overflow:hidden; text-overflow:ellipsis }
-  .cd { text-align:right; font: 200 22px -apple-system, "SF Pro Display", sans-serif; color:#ffb35c; line-height:1 }
-  .cd small { display:block; font: 600 9px -apple-system, sans-serif; letter-spacing:.1em; color:#857d75; margin-top:3px }
+
+  .pane { animation: fadein .3s ease-out }
+  .hero { animation: rise .4s cubic-bezier(.2,.8,.2,1) }
+  .np { display:grid; place-items:center; padding:8px; text-align:center; font-size:10.5px; font-weight:600; color:#d9cfc6 }
+  .lbl.top { padding:0 20px; margin-bottom:3px; font-size:8px }
+  
+  .list { padding:0 12px }
+  .row { display:grid; grid-template-columns: 34px 1fr auto; align-items:center; gap:12px; height:50px; padding:0 10px; border-radius:8px; cursor:pointer;
+         transition: background .15s; animation: rise .4s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(var(--i) * 45ms) }
+  .row .poster { width:34px; height:44px; border-radius:4px; transition: transform .2s cubic-bezier(.2,.8,.2,1) }
+  .row:hover .poster { transform: scale(1.06) rotate(-2deg) }
+  .row:hover { background:rgba(255,179,92,.07) }
+  .nm { min-width:0; font-size:12.5px; color:#e6dcd2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .nm small { display:block; font-size:10px; color:#857d75; margin-top:2px; overflow:hidden; text-overflow:ellipsis }
+  .cd { text-align:right; font: 200 20px -apple-system, "SF Pro Display", sans-serif; color:#ffb35c; line-height:1 }
+  .cd small { display:block; font: 600 8.5px -apple-system, sans-serif; letter-spacing:.08em; color:#857d75; margin-top:2px }
   .cd.now { color:#4ade80 }
-  .empty { padding:110px 30px 0; text-align:center; color:#8c8178; line-height:1.6 }
+
+  .scroll-list { padding:0 12px; max-height:360px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:rgba(255,255,255,.12) transparent }
+  .scroll-list::-webkit-scrollbar { width:4px }
+  .scroll-list::-webkit-scrollbar-thumb { background:rgba(255,255,255,.12); border-radius:2px }
+  .restore-btn { height:22px; padding:0 8px; border-radius:5px; font-size:8px; font-weight:700; letter-spacing:.08em;
+                 color:#a39a92; background:rgba(255,255,255,.05); cursor:pointer; display:inline-flex; align-items:center;
+                 border:1px solid transparent; transition:all .15s }
+  .restore-btn:hover { color:#4ade80; background:rgba(74,222,128,.1); border-color:rgba(74,222,128,.25) }
+  .restore-btn:active { transform:scale(.95) }
+  .empty { padding:100px 30px 0; text-align:center; color:#8c8178; line-height:1.6 }
 `;
 const savedTab = () => { try { return localStorage.getItem("watch-tab") || "FOR YOU"; } catch (e) { return "FOR YOU"; } };
-export const initialState = { output: "", tab: savedTab() };
-export const updateState = (ev, s) => ev.type === "TAB" ? { ...s, tab: ev.tab } : { ...s, output: ev.output, error: ev.error };
-const year = x => ((x.desc || "").match(/\b(19|20)\d\d\b/) || [""])[0];
+export const initialState = { output: "", tab: savedTab(), genre: "all", sel: null };
+export const updateState = (ev, s) =>
+  ev.type === "TAB" ? { ...s, tab: ev.tab, sel: null }
+  : ev.type === "GENRE" ? { ...s, genre: ev.genre, sel: null }
+  : ev.type === "SEL" ? { ...s, sel: ev.sel }
+  : { ...s, output: ev.output, error: ev.error };
+
+const year = x => ((x.desc || "").match(/\b(19|20)\d\d\b/) || [(x.release || "").slice(0, 4)])[0];
 const hm = m => m ? Math.floor(m / 60) + "h " + String(m % 60).padStart(2, "0") + "m" : "";
 const meta = x => [year(x), x.kind === "show" ? "Series" + (x.net ? " · " + x.net : "") : "Film", x.kind !== "show" && hm(x.mins),
   x.rating && "★ " + x.rating.toFixed(1)].filter(Boolean).join(" · ");
 const trailer = x => run(`open "https://www.youtube.com/results?search_query=${encodeURIComponent(x.title + " " + year(x) + " official trailer")}"`);
+const stream = x => run(`open "https://www.justwatch.com/us/search?q=${encodeURIComponent(x.title)}"`);
 const days = iso => Math.round((new Date(iso.slice(0, 10) + "T00:00") - new Date(new Date().toDateString())) / 864e5);
-const dayName = iso => new Date(iso.slice(0, 10) + "T00:00").toLocaleDateString("en-GB",  // the year only when it isn't this one
+const dayName = iso => new Date(iso.slice(0, 10) + "T00:00").toLocaleDateString("en-GB",
   { weekday: "short", day: "numeric", month: "short", ...(iso.slice(0, 4) != new Date().getFullYear() ? { year: "numeric" } : {}) });
 const Poster = ({ x, small }) => x.poster ? <img className="poster" src={x.poster} alt="" /> : <div className="poster np">{small ? x.title[0] : x.title}</div>;
-export const render = ({ output, tab }, dispatch) => {
+
+export const render = ({ output, tab, genre = "all", sel }, dispatch) => {
   let d = null; try { d = JSON.parse(output); } catch (e) {}
   const pick = t => { try { localStorage.setItem("watch-tab", t); } catch (e) {} dispatch({ type: "TAB", tab: t }); };
   const act = (verb, key) => run(`%%PY%% ~/.stark/picks.py ${verb} '${(key || "").replace(/'/g, "'\\''")}'`)
-    .then(out => dispatch({ type: "UB/COMMAND_RAN", output: out }));
-  const p = d && d.pick;
-  // coming up: DC / Marvel releases + new episodes, soonest first
+    .then(out => { dispatch({ type: "SEL", sel: null }); dispatch({ type: "UB/COMMAND_RAN", output: out }); });
+
+  const pool = (d && d.pool) || [];
+  const genreItems = genre === "all" ? pool : pool.filter(x => x.tag === genre);
+  const p = sel || (genreItems.length > 0 ? genreItems[0] : d && d.pick);
+  const moreCards = (genreItems.length > 0 ? genreItems.filter(x => x.key !== (p && p.key)) : (d && d.more) || []).slice(0, 6);
+
+  // coming up: releases + episodes, soonest first
   const up = d ? [...d.soon.map(x => ({ x, at: x.release, film: 1 })),
     ...d.eps.map(x => { const e = x.next && days(x.next.at) >= 0 ? x.next : x.prev; return { x, at: e.at, e }; })]
-    .sort((a, b) => a.at.localeCompare(b.at)).slice(0, 6) : [];  // 6 rows fill the panel
+    .sort((a, b) => a.at.localeCompare(b.at)).slice(0, 6) : [];
+
+  const seenList = (d && d.seen_list) || [];
+
   return (
     <div>
       <header><span style={{ color: "#ffb35c" }}>▶</span><h1>WATCH</h1>
-        <span className="sub"><span className="seg">{["FOR YOU", "COMING UP"].map(t =>
-          <span key={t} className={tab === t ? "on" : ""} onClick={() => pick(t)}>{t}</span>)}</span>
-          {d && <span> · <b>{d.seen}</b> SEEN</span>}</span></header>
+        <span className="sub">
+          <span className="seg">
+            {["FOR YOU", "COMING UP", "WATCHED"].map(t =>
+              <span key={t} className={tab === t ? "on" : ""} onClick={() => pick(t)}>{t}</span>)}
+          </span>
+          {d && <span> · <b>{d.seen}</b> SEEN</span>}
+        </span>
+      </header>
+
       {!d ? <div className="empty">Finding something good to watch…</div>
         : tab === "COMING UP" ? <div className="list pane" key="up">
           {!up.length && <div className="empty">Nothing new from your list right now.</div>}
@@ -1451,29 +1501,58 @@ export const render = ({ output, tab }, dispatch) => {
                 <small>{n > 0 ? (film ? "TO PREMIERE" : "TO NEW EP") : film ? "IN CINEMAS" : "NEW EPISODE"}</small></span>
             </div>; })}
         </div>
-        : !p ? <div className="empty">You've seen everything on the list. Ask Claude for more picks!</div>
+        : tab === "WATCHED" ? <div className="scroll-list pane" key="seen">
+          {!seenList.length && <div className="empty">No watched titles yet. Mark something as seen from FOR YOU!</div>}
+          {seenList.map((x, i) =>
+            <div className="row" key={x.key} style={{ "--i": i }}>
+              <Poster x={x} small />
+              <span className="nm" onClick={() => trailer(x)}>{x.title}
+                <small>{meta(x)} · {x.why}</small>
+              </span>
+              <span className="restore-btn" onClick={() => act("unmark", x.key)} title="Restore back to recommendations queue">↺ RESTORE</span>
+            </div>)}
+        </div>
+        : !p ? <div className="empty">You've seen everything in this category. Switch category or restore from WATCHED!</div>
         : <div className="pane" key="you">
+          {d.genres && <div className="genre-bar">
+            {d.genres.map(g =>
+              <span key={g.tag} className={"gpill" + (genre === g.tag ? " on" : "")}
+                onClick={() => dispatch({ type: "GENRE", genre: g.tag })}>{g.label}</span>)}
+          </div>}
+
           <div className="hero" key={p.key}>
             {p.poster && <div className="bg" style={{ backgroundImage: `url("${p.poster}")` }} />}
             <Poster x={p} />
             <div className="info">
-              <div className="lbl" style={{ color: "#ffb35c" }}>TONIGHT'S PICK · {p.why.toUpperCase()}</div>
+              <div className="top-meta">
+                <span className="tag-lbl">{sel ? "PREVIEW" : "TONIGHT'S PICK"} · {p.why.toUpperCase()}</span>
+                {p.rating && <span className="rate-badge">★ {p.rating.toFixed(1)}</span>}
+              </div>
               <div className="ttl">{p.title}</div>
               <div className="meta">{meta(p)}</div>
               <div className="blurb">{p.blurb}</div>
               <div className="acts">
                 <span className="act main" onClick={() => trailer(p)}>▶ TRAILER</span>
+                <span className="act stream" onClick={() => stream(p)} title="Find where to stream on JustWatch">⚡ STREAM</span>
                 <span className="act" onClick={() => act("seen", p.key)}>✓ SEEN IT</span>
-                <span className="act" onClick={() => act("another")}>↻ ANOTHER</span>
-                <span className="act" onClick={() => act("skip", p.key)}>✕ NOT FOR ME</span>
+                <span className="act" onClick={() => { if (sel) dispatch({ type: "SEL", sel: null }); else act("another"); }}>↻ {sel ? "CLEAR" : "ANOTHER"}</span>
+                <span className="act" onClick={() => act("skip", p.key)}>✕ SKIP</span>
               </div>
             </div>
           </div>
-          <div className="lbl top">MORE FOR YOU</div>
+
+          <div className="lbl top">{genre === "all" ? "MORE FOR YOU" : "MORE IN " + (d.genres.find(g => g.tag === genre) || {}).label}</div>
           <div className="more">
-            {d.more.map((x, i) => <div className="card" key={x.key} style={{ "--i": i }} title={x.why + " · " + meta(x)} onClick={() => trailer(x)}>
-              <Poster x={x} /><div className="ct">{x.title}</div></div>)}
-          </div></div>}
+            {moreCards.map((x, i) =>
+              <div className={"card" + (p.key === x.key ? " sel" : "")} key={x.key} style={{ "--i": i }}
+                   title={x.why + " · " + meta(x) + " (Click to preview, click ▶ for trailer)"}
+                   onClick={() => dispatch({ type: "SEL", sel: x })}>
+                <Poster x={x} />
+                {x.rating && <span className="c-rate">★ {x.rating.toFixed(1)}</span>}
+                <div className="ct">{x.title}</div>
+              </div>)}
+          </div>
+        </div>}
     </div>
   );
 };''')
