@@ -18,7 +18,7 @@ L, C, R = 32, 452, 1038
 DY = -36  # Übersicht's canvas starts below the menu bar
 POS = {
     "clock":   (L, 56, 400, 230),  "puzzle":  (C, 56, 566, 428),   "batcave":     (R, 56, 400, 276),
-    "weather": (L, 306, 400, 320), "watch":   (C, 504, 566, 428),  "chesstv":     (R, 352, 400, 330),
+    "weather": (L, 306, 400, 320), "watch":   (C, 504, 566, 428),  "sky":         (R, 352, 400, 330),
     "system":  (L, 646, 400, 286),                                 "connections": (R, 702, 400, 230),
 }
 
@@ -312,9 +312,9 @@ WARM = [
 # itself (Übersicht's WebKit ignores image cursors; CSS can't be trusted to draw it).
 CURSOR = "none"
 
-NET = {"weather", "puzzle", "watch", "chesstv", "connections"}  # panels that need the internet
+NET = {"weather", "puzzle", "watch", "sky", "connections"}  # panels that need the internet
 
-# Chess board shared by the puzzle and Lichess TV panels (pieces: Lichess cburnett set, downloaded by puzzle.py)
+# Chess board for the puzzle panel (pieces: Lichess cburnett set, downloaded by puzzle.py)
 CHESS = r"""const FILES = "abcdefgh";
 const parseFen = fen => { const b = {}; fen.split(" ")[0].split("/").forEach((row, r) => { let f = 0;
   for (const c of row) { if (/\d/.test(c)) f += +c; else { b[FILES[f] + (8 - r)] = (c === c.toUpperCase() ? "w" : "b") + c.toUpperCase(); f++; } } });
@@ -1480,57 +1480,161 @@ export const render = ({ output, tab }, dispatch) => {
 
 
 # ───────────────────────── LICHESS TV ─────────────────────────
-widget("chesstv", r'''// Lichess TV: the top-rated game being played right now, live. Click the board to watch it on Lichess.
+widget("sky", r'''// Sky over Nairobi: live aircraft on a radar (adsb.lol via sky.py) and the ISS's next pass over you.
+// Hover a plane (on the radar or in the list) for its flight; click it to follow it on the adsb.lol map.
+// Leaving the panel (or 8 s idle) brings the nearest-flights list back, like Weather.
 import { run } from "uebersicht";
-export const command = "/usr/bin/curl -sN --max-time 3 https://lichess.org/api/tv/feed | head -n 2 | paste -sd, - | sed 's/^/[/;s/$/]/'";
-export const refreshFrequency = 3000;
+export const command = "%%PY%% ~/.stark/sky.py";
+export const refreshFrequency = 15000;
 export const className = `
   %%POS%%%%SHARED%%
-  .wrap { display:flex; gap:16px; padding:2px 18px 0 }
-  %%BOARDCSS%%
-  .board { width:248px; height:248px; flex:none; cursor:pointer }
-  .side { flex:1; min-width:0; display:flex; flex-direction:column; justify-content:space-between; padding:2px 0 }
-  .pl .nm { font-size:12.5px; color:#e6dcd2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:3px }
-  .pl .ti { font-size:9px; font-weight:800; color:#ffb35c; margin-right:5px }
-  .pl .rt { font-size:10.5px; color:#857d75; margin-top:1px }
-  .clk { display:inline-block; margin-top:6px; padding:3px 8px; border-radius:6px; font: 500 15px -apple-system, sans-serif;
-         color:#a39a92; background:rgba(255,255,255,.05) }
-  .clk.run { color:#241b16; background:#ffb35c }
-  .clk.low.run { background:#f87171 }
-  .live { display:flex; align-items:center; gap:7px; font-size:9px; font-weight:700; letter-spacing:.16em; color:#f87171 }
-  .live i { width:7px; height:7px; border-radius:50%; background:#f87171; animation: lv 1.6s ease-in-out infinite }
-  @keyframes lv { 50% { opacity:.3 } }
-  .empty { padding:110px 20px 0; text-align:center; color:#8c8178 }
+  /* keyframe names are global across widgets (System already has one called sweep), hence the sky prefix */
+  .wrap { display:flex; gap:14px; padding:4px 16px 0 }
+  .radar { position:relative; width:236px; height:236px; flex:none; border-radius:50%; overflow:hidden;
+           background: radial-gradient(circle, rgba(245,177,76,.08), rgba(245,177,76,.015) 68%, rgba(0,0,0,.28));
+           box-shadow: inset 0 0 0 1px rgba(245,177,76,.24), inset 0 0 44px rgba(0,0,0,.5) }
+  .radar svg.grid { position:absolute; left:0; top:0 }
+  .grid circle { fill:none; stroke: rgba(245,177,76,.17); stroke-width:1 }
+  .grid line { stroke: rgba(245,177,76,.09); stroke-width:1 }
+  .grid text { font: 600 7px Orbitron, sans-serif; letter-spacing:.1em; fill: rgba(245,177,76,.6) }
+  .grid text.rng { font: 500 8px -apple-system, sans-serif; letter-spacing:0; fill: rgba(242,237,230,.3) }
+  /* one rotating sheet with will-change (cheap on the GPU); blips flash as it passes and fade over the turn */
+  .sweep { position:absolute; inset:0; border-radius:50%; will-change: transform; animation: skysweep 4s linear infinite;
+           background: conic-gradient(from 0deg, transparent 0deg 270deg, rgba(245,177,76,.03) 285deg, rgba(245,177,76,.24) 358deg, rgba(255,214,150,.8) 360deg) }
+  @keyframes skysweep { to { transform: rotate(360deg) } }
+  .you { position:absolute; left:115px; top:115px; width:6px; height:6px; border-radius:50%; background:#ffffff; box-shadow:0 0 8px rgba(255,255,255,.75) }
+  .bl { position:absolute; left:0; top:0; width:20px; height:20px; margin:-10px 0 0 -10px; will-change: transform;
+        transition: transform 15s linear; cursor:pointer; z-index:1 }
+  .bl.new { transition:none }
+  .bl .g { position:absolute; inset:0; will-change: opacity; animation: skyping 4s linear infinite }
+  @keyframes skyping { 0% { opacity:1 } 100% { opacity:.3 } }
+  .bl svg { width:20px; height:20px; display:block; filter: drop-shadow(0 0 4px rgba(245,177,76,.75)) }
+  .bl svg path { fill:#f5b14c; transition: fill .2s }
+  .bl.sel { z-index:2 } .bl.sel .g { animation:none; opacity:1 } .bl.sel svg path { fill:#ffffff }
+  .bl.sel::after { content:""; position:absolute; inset:-3px; border-radius:50%; border:1px solid rgba(255,255,255,.75) }
+  .bl .cs { position:absolute; left:21px; top:4px; display:none; padding:1px 5px; border-radius:4px; white-space:nowrap;
+            font: 600 9px -apple-system, sans-serif; color:#ffffff; background: rgba(17,14,12,.85) }
+  .bl.lf .cs { left:auto; right:21px }
+  .bl.sel .cs { display:block }
+  .side { flex:1; min-width:0; height:236px; display:flex; flex-direction:column }
+  .stage { display:grid; min-height:0 }
+  .view { grid-area: 1 / 1; min-width:0; opacity:0; visibility:hidden; transition: opacity .25s, visibility .25s }
+  .view.on { opacity:1; visibility:visible }
+  .row { padding:5px 0 6px; border-bottom:1px solid rgba(255,255,255,.05); cursor:pointer; min-width:0 }
+  .row:last-child { border-bottom:0 }
+  .row .c { font-size:12.5px; font-weight:600; color:#ebe5dd; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; transition: color .2s }
+  .row .s { font-size:10px; color:#9b938a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px }
+  .row:hover .c, .row.sel .c { color:#f5b14c }
+  .view.on .row { animation: rise .45s cubic-bezier(.2,.8,.2,1) backwards; animation-delay: calc(var(--i) * 60ms) }
+  .quiet { padding-top:14px; font-size:11px; line-height:1.45; color:#857d75 }
+  .det .c { font: 500 19px -apple-system, "SF Pro Display", sans-serif; color:#ffffff; letter-spacing:-.01em; margin-top:5px;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .det .al { font-size:10.5px; color:#f5b14c; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:1px }
+  .det .rt { font-size:11px; color:#ebe5dd; margin-top:6px; line-height:1.35 }
+  .det .rt i { font-style:normal; color:#857d75 }
+  .det .rt .np { display:block; font-size:9.5px; margin-top:1px }
+  .det .kv { display:grid; grid-template-columns: auto minmax(0, 1fr); gap:3px 6px; margin-top:7px; font-size:10.5px }
+  .det .kv span { color:#857d75 } .det .kv b { font-weight:500; color:#ebe5dd; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .iss { margin-top:auto; padding:8px 10px 8px; border-radius:12px; background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06) }
+  .iss.now { border-color: rgba(245,177,76,.5); background: rgba(245,177,76,.07) }
+  .iss .t { font: 300 22px -apple-system, "SF Pro Display", sans-serif; color:#ffffff; line-height:1.05; margin-top:4px; white-space:nowrap }
+  .iss .t small { font: 500 10.5px -apple-system, sans-serif; color:#9b938a; margin-left:5px }
+  .iss .s { font-size:10px; color:#9b938a; margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .iss .s b { color:#f5b14c; font-weight:600 }
+  .iss .lbl { white-space:nowrap }
+  .iss .top { display:flex; align-items:center; justify-content:space-between; gap:4px }
+  .iss .tag { font: 700 7.5px -apple-system, sans-serif; letter-spacing:.08em; color:#6b645d }
+  .iss .tag.on { color:#f5b14c }
+  .empty { padding:100px 20px 0; text-align:center; color:#857d75 }
 `;
-%%CHESS%%
-const fmtClk = s => { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0"); };
-// the running clock ticks locally between refreshes
-clearInterval(window.__tvTick); window.__tvTick = setInterval(() => document.querySelectorAll(".clk.run[data-s]").forEach(el => {
-  el.textContent = fmtClk(+el.dataset.s - (Date.now() - +el.dataset.t) / 1000); }), 1000);
+const SZ = 236, RAD = 110, PERIOD = 4000;
+const COMPASS = "N NE E SE S SW W NW".split(" "), dir = b => COMPASS[Math.round(b / 45) % 8];
+const ft = a => a == null ? "—" : a.toLocaleString("en-US") + " ft";
+const vs = v => v > 300 ? " ↑" : v < -300 ? " ↓" : "";
+// square-root range scale so the busy approach around the city isn't one blob; rings at 25 / 100 / 225 km
+const pos = (km, b, range) => { const r = RAD * Math.sqrt(Math.min(km, range) / range), a = b * Math.PI / 180;
+  return [SZ / 2 + r * Math.sin(a), SZ / 2 - r * Math.cos(a)]; };
+// Every ping animation shares the sweep's clock: the sweep starts at timeline 0 (pointing north), and a blip at bearing b
+// starts its flash when the sweep reaches it. Setting startTime on the CSS animations keeps them in step across re-renders.
+const sync = (el, off) => { if (el) try { el.getAnimations().forEach(a => { if (a.startTime !== off) a.startTime = off; }); } catch (e) {} };
+const Plane = ({ trk }) => <svg viewBox="0 0 20 20"><path transform={`rotate(${trk} 10 10)`}
+  d="M10 1.8 L11.1 7.4 L17.2 11 L17.2 12.4 L11.1 10.6 L10.8 15.1 L13 16.7 L13 17.8 L10 17 L7 17.8 L7 16.7 L9.2 15.1 L8.9 10.6 L2.8 12.4 L2.8 11 L8.9 7.4 Z" /></svg>;
+// Hover a plane to put its flight card where the list is; leaving (or 8 s idle) brings the list back.
+const pick = (root, k) => { if (!root) return;
+  root.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.dataset.k === k));
+  root.querySelectorAll("[data-p]").forEach(v => v.classList.toggle("sel", v.dataset.p === k)); };
+const home = e => { const el = e.currentTarget; clearTimeout(window.__skyHome); window.__skyHome = setTimeout(() => pick(el, "list"), 8000); };
+const follow = hex => run(`open "https://globe.adsb.lol/?icao=${hex}"`);
+const hm = t => new Date(t * 1000).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+const day = t => { const d = new Date(t * 1000), n = new Date(), tm = new Date(n.getTime() + 864e5);
+  return d.toDateString() === n.toDateString() ? "" : d.toDateString() === tm.toDateString() ? "tomorrow" : d.toLocaleDateString("en-GB", { weekday: "short" }); };
+const inT = t => { const m = Math.max(0, Math.round((t - Date.now() / 1000) / 60)); return m < 60 ? m + "m" : Math.floor(m / 60) + "h " + (m % 60) + "m"; };
+const Iss = ({ s }) => {
+  if (!s) return <div className="iss"><div className="lbl">ISS</div><div className="s">Orbit data unavailable</div></div>;
+  if (s.now.el >= 10) return <div className="iss now"><div className="lbl">ISS · NOW</div>
+    <div className="t">Look {s.now.az}<small>{s.now.el}° up</small></div>
+    <div className="s">{s.now.sunlit ? <b>Sunlit · visible if clear</b> : "In Earth's shadow"}</div></div>;
+  const p = s.vis && s.vis.start - Date.now() / 1000 < 36 * 3600 ? s.vis : s.next;
+  if (!p) return <div className="iss"><div className="lbl">ISS</div><div className="s">{s.now.km.toLocaleString("en-US")} km away</div></div>;
+  return <div className="iss" title={`${s.now.km.toLocaleString("en-US")} km away at ${s.now.alt} km up`}>
+    <div className="top"><span className="lbl">ISS</span>{p.vis ? <span className="tag on">VISIBLE</span> : <span className="tag">DAYLIGHT</span>}</div>
+    <div className="t num">{hm(p.start)}<small>{day(p.start) || "in " + inT(p.start)}</small></div>
+    <div className="s">{p.from} → {p.to} · up to {p.max}°</div></div>;
+};
+const problem = d => d.ac == null ? "Flight feed down" : d.iss == null ? "ISS data down" : null;
 export const render = ({ output }) => {
-  let f = []; try { f = JSON.parse(output); } catch (e) {}
-  const feat = f.find(x => x.t === "featured"), mv = [...f].reverse().find(x => x.t === "fen");
-  if (!feat) return <div><header><span style={{ color: "#ffb35c" }}>♟</span><h1>LICHESS TV</h1></header><div className="empty">Tuning in…</div></div>;
-  const g = feat.d, fen = mv ? mv.d.fen : g.fen, flip = g.orientation === "black", turn = fen.split(" ")[1];
-  const P = c => { const p = g.players.find(x => x.color === c), sec = mv ? (c === "white" ? mv.d.wc : mv.d.bc) : p.seconds;
-    return { ...p, sec, run: turn === c[0] }; };
-  const [top, bot] = flip ? [P("white"), P("black")] : [P("black"), P("white")];
-  const now = Date.now();
-  const Pl = ({ p }) => <div className="pl">
-    <div className="nm">{p.user.title && <span className="ti">{p.user.title}</span>}{p.user.name}</div>
-    <div className="rt num">{p.rating}</div>
-    <span className={"clk num" + (p.run ? " run" : "") + (p.sec < 20 ? " low" : "")} data-s={p.sec} data-t={now}>{fmtClk(p.sec)}</span></div>;
+  let d = null; try { d = JSON.parse(output); } catch (e) {}
+  if (!d) return <div><header><h1>SKY</h1></header><div className="empty">Scanning the sky…</div></div>;
+  const ac = d.ac || [], range = d.range || 225, near = ac.slice(0, 3);
+  const seen = (window.__skySeen = window.__skySeen || new Set());
   return (
     <div>
-      <header><span style={{ color: "#ffb35c" }}>♟</span><h1>LICHESS TV</h1>
-        <span className="sub">TOP RATED · <b>{Math.round((top.rating + bot.rating) / 2)}</b> AVG</span></header>
-      <div className="wrap">
-        <div onClick={() => run(`open "https://lichess.org/${g.id}"`)}>
-          <Board fen={fen} flip={flip} size={248} lm={mv ? mv.d.lm : null} coords={false} /></div>
+      <header><svg width="13" height="13" viewBox="0 0 13 13" style={{ flex: "none" }}><circle cx="6.5" cy="6.5" r="5.6" fill="none" stroke="#f5b14c" strokeWidth="1.1" />
+        <circle cx="6.5" cy="6.5" r="2.6" fill="none" stroke="#f5b14c" strokeWidth=".9" opacity=".6" /><path d="M6.5 6.5 L10.6 2.6" stroke="#f5b14c" strokeWidth="1.2" strokeLinecap="round" /></svg>
+        <h1>SKY OVERHEAD</h1>
+        <span className="sub"><b>{ac.length}</b> AIRBORNE{d.ground ? ` · ${d.ground} ON GROUND` : ""}</span></header>
+      <div className="wrap" onMouseLeave={e => pick(e.currentTarget, "list")} onMouseMove={home}>
+        <div className="radar">
+          <svg className="grid" width={SZ} height={SZ}>
+            {[25, 100, range].map(k => <circle key={k} cx={SZ / 2} cy={SZ / 2} r={RAD * Math.sqrt(k / range)} />)}
+            <line x1={SZ / 2} y1="8" x2={SZ / 2} y2={SZ - 8} /><line x1="8" y1={SZ / 2} x2={SZ - 8} y2={SZ / 2} />
+            <text x={SZ / 2} y="15" textAnchor="middle">N</text><text x={SZ - 9} y={SZ / 2 + 3} textAnchor="end">E</text>
+            <text x={SZ / 2} y={SZ - 8} textAnchor="middle">S</text><text x="9" y={SZ / 2 + 3}>W</text>
+            {[25, 100, range].map(k => { const r = RAD * Math.sqrt(k / range) * .7071;  /* just inside each ring on the NE diagonal */
+              return <text key={k} className="rng" textAnchor="end" x={SZ / 2 + r - 3} y={SZ / 2 - r + 10}>{k}{k === range ? " km" : ""}</text>; })}
+          </svg>
+          <div className="sweep" ref={el => sync(el, 0)} />
+          <div className="you" />
+          {ac.map(a => { const [x, y] = pos(a.km, a.b, range), fresh = !seen.has(a.hex); seen.add(a.hex);
+            return <div key={a.hex} data-p={a.hex} className={"bl" + (fresh ? " new" : "") + (x > SZ - 70 ? " lf" : "")}
+              style={{ transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)` }}
+              ref={el => el && fresh && setTimeout(() => el.classList.remove("new"), 50)}
+              onMouseEnter={e => pick(e.currentTarget.closest(".wrap"), a.hex)} onClick={() => follow(a.hex)}>
+              <div className="g" ref={el => sync(el, (a.b / 360) * PERIOD)}><Plane trk={a.trk} /></div><span className="cs">{a.cs}</span></div>; })}
+        </div>
         <div className="side">
-          <Pl p={top} />
-          <div className="live"><i />LIVE</div>
-          <Pl p={bot} />
+          <div className="stage">
+            <div className="view on" data-k="list">
+              <div className="lbl">NEAREST</div>
+              {near.length ? near.map((a, i) => <div className="row" key={a.hex} data-p={a.hex} style={{ "--i": i }}
+                  onMouseEnter={e => pick(e.currentTarget.closest(".wrap"), a.hex)} onClick={() => follow(a.hex)}>
+                <div className="c">{a.cs}</div>
+                <div className="s num">{a.o ? `${a.o} → ${a.d}` : a.g || a.type || ft(a.alt)}</div></div>)
+                : <div className="quiet">Quiet skies. Nothing flying within {range} km right now.</div>}
+            </div>
+            {ac.map(a => <div className="view det" key={a.hex} data-k={a.hex}>
+              <div className="lbl">{a.km < 30 ? "OVERHEAD" : "IN RANGE"}</div>
+              <div className="c">{a.cs}</div>
+              <div className="al">{a.al || (a.reg ? "Reg " + a.reg : "Operator not listed")}</div>
+              <div className="rt">{a.o ? <span>{a.oc}<i> → </i>{a.dc}</span> : <span>{a.g}<i className="np">No public flight plan</i></span>}</div>
+              <div className="kv num">
+                <span>Type</span><b>{a.type || "—"}</b>
+                <span>Alt</span><b>{ft(a.alt)}{vs(a.vs)}</b>
+                <span>Speed</span><b>{a.kmh} km/h</b>
+                <span>From you</span><b>{Math.round(a.km)} km {dir(a.b)}</b>
+              </div></div>)}
+          </div>
+          <Iss s={d.iss} />
         </div>
       </div>
     </div>
@@ -1812,9 +1916,9 @@ const installMonkey = () => {
   const troop = Array.from({ length: MONKEYS }, (_, i) => monkey(i));
   window.__monkeyNow = async () => { for (const go of troop) { const p = go(); if (await Promise.race([p, Promise.resolve("running")]) === "running") return "sent"; } return "all out"; };
 };
-const PAIRS = [["clock", "weather"], ["weather", "system"], ["puzzle", "watch"], ["batcave", "chesstv"], ["chesstv", "connections"],
-  ["clock", "puzzle"], ["weather", "puzzle"], ["system", "watch"], ["puzzle", "batcave"], ["puzzle", "chesstv"],
-  ["watch", "chesstv"], ["watch", "connections"]];
+const PAIRS = [["clock", "weather"], ["weather", "system"], ["puzzle", "watch"], ["batcave", "sky"], ["sky", "connections"],
+  ["clock", "puzzle"], ["weather", "puzzle"], ["system", "watch"], ["puzzle", "batcave"], ["puzzle", "sky"],
+  ["watch", "sky"], ["watch", "connections"]];
 const LAYOUT_VERSION = "3";  // clears positions saved back when panels could be rearranged
 const installLinks = () => {
   if (window.__hudLinks === "%%BUILD%%") return; window.__hudLinks = "%%BUILD%%";
