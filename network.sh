@@ -28,13 +28,20 @@ svc=$(<$lat); rm -f $lat
 # "Wi-Fi Name" shortcut (~3 s), cached and refreshed in the background every 5 min or when the channel changes
 wifi=$($D/wifi 2>/dev/null); [[ -n $wifi && $wifi != "{}" ]] || wifi="{}"
 if [[ $wifi != "{}" ]]; then
-  ch=$(print -r $wifi | grep -o '"ch":[0-9]*')
+  # the router's MAC tells networks apart (it isn't hidden); a new router or channel means a new network name to fetch
+  wdev=$(networksetup -listallhardwareports | awk '/Wi-Fi/{getline; print $2; exit}'); wdev=${wdev:-en0}
+  gw=$(ipconfig getoption $wdev router 2>/dev/null); gmac=; [[ -n $gw ]] && gmac=$(arp -n $gw 2>/dev/null | awk '{print $4}')
+  [[ $gmac == *:* ]] || gmac=
+  ch="$(print -r $wifi | grep -o '"ch":[0-9]*') $gmac"
   if [[ ! -s $D/.ssid || $(( $(date +%s) - $(stat -f %m $D/.ssid) )) -gt 300 || $(cat $D/.ssid.ch 2>/dev/null) != $ch ]]; then
     ( n=$(shortcuts run "Wi-Fi Name" </dev/null 2>/dev/null | head -1); [[ -n $n ]] && print -r -- $n > $D/.ssid && print -r $ch > $D/.ssid.ch ) </dev/null &>/dev/null &!
   fi
   ssid=$(cat $D/.ssid 2>/dev/null)
   [[ -n $ssid ]] && wifi="${wifi%\}},\"ssid\":\"${ssid//\"/}\"}"
 fi
+# data used per Wi-Fi network (wifiusage.py keeps the running totals); off Wi-Fi it just moves its baseline
+ssidt=0; [[ -n $gmac && $(cat $D/.ssid.ch 2>/dev/null) == $ch ]] && ssidt=$(stat -f %m $D/.ssid 2>/dev/null)
+usage=$(python3 $D/wifiusage.py "${wdev:-en0}" "$gmac" "$ssid" "${ssidt:-0}" 2>/dev/null); [[ -n $usage ]] || usage=null
 
 # VPN: a tunnel interface holding an IPv4 address (system utuns only have IPv6); full tunnel if it owns the default route
 vif=$(ifconfig | awk '/^[a-z]/{i=""} /^(utun|ipsec|ppp)/{i=$1; sub(":","",i)} /inet /&&i{print i; exit}')
@@ -70,4 +77,4 @@ $D/speedtest.sh &>/dev/null &!   # starts a test in the background only when one
 speed=$(cat $D/.speed.json 2>/dev/null); [[ -n $speed ]] || speed=null
 testing=$([[ -e $D/.speed.lock ]] && print true || print false)
 
-print "{\"dev\":\"$dev\",\"ip\":\"${ip:-offline}\",\"down\":$(( b2[1]-b1[1] )),\"up\":$(( b2[2]-b1[2] )),\"services\":[${svc%,}],\"wifi\":$wifi,\"vpn\":$vpn,\"tor\":$tor,\"pub\":$pubj,\"speed\":$speed,\"testing\":$testing}"
+print "{\"dev\":\"$dev\",\"ip\":\"${ip:-offline}\",\"down\":$(( b2[1]-b1[1] )),\"up\":$(( b2[2]-b1[2] )),\"services\":[${svc%,}],\"wifi\":$wifi,\"vpn\":$vpn,\"tor\":$tor,\"pub\":$pubj,\"speed\":$speed,\"testing\":$testing,\"usage\":$usage}"

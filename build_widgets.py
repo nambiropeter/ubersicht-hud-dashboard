@@ -892,8 +892,9 @@ export const render = ({ output }) => {
 };''')
 
 # ───────────────────────── CONNECTIONS ─────────────────────────
-widget("connections", r'''// Connections, two views (toggle in the header, remembered):
-// LIVE = throughput and latency to the services you use; LINK = Wi-Fi link, VPN + public IP, last speed test.
+widget("connections", r'''// Connections, three views (toggle in the header, remembered):
+// LIVE = throughput and latency to the services you use; LINK = Wi-Fi link, VPN + public IP, last speed test;
+// DATA = data used on each Wi-Fi network (today / this month / since reset, last 14 days).
 // The VPN row's OFF/US/UK switch runs ~/.stark/vpn.sh (free: Tor with the exit pinned to that country).
 import { run } from "uebersicht";
 export const command = "~/.stark/network.sh";
@@ -949,6 +950,21 @@ export const className = `
   .r { font-size:10.5px; color:#a39a92; text-align:right }
   .go { margin-left:6px; padding:1px 6px; border-radius:5px; background:rgba(255,255,255,.06); color:#e6dcd2; cursor:pointer }
   .go:hover { background:rgba(255,255,255,.12) } .go.busy { color:#ffb35c; cursor:default }
+  .data { padding:6px 22px 0 }
+  .dh { display:flex; align-items:baseline; gap:8px }
+  .dh .v { flex:1 } .dh .r { white-space:nowrap }
+  .stats { display:grid; grid-template-columns: repeat(3, 1fr); margin-top:8px }
+  .stat .rl { margin-top:0 } .stat .rate { font-size:22px }
+  .stat .ud { font-size:9.5px; color:#6f665f; margin-top:1px; white-space:nowrap }
+  .days { display:flex; align-items:flex-end; gap:3px; height:38px; margin-top:10px }
+  .days span { flex:1; height:100%; display:flex; align-items:flex-end; cursor:default }
+  .days i { display:block; width:100%; min-height:1px; border-radius:2px 2px 0 0; background:#ffb35c; opacity:.45; transition: opacity .15s }
+  .days span.today i, .days span.hov i { opacity:1 }
+  .cap { display:flex; justify-content:space-between; font-size:9.5px; color:#8c8178; margin-top:3px; letter-spacing:.04em }
+  .nets { margin-top:6px }
+  .net { display:grid; grid-template-columns: 1fr auto 46px; gap:10px; font-size:10.5px; color:#a39a92; padding:3px 0; border-top:1px solid rgba(255,255,255,.05) }
+  .net b { font-weight:500; color:#d9cfc6; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .net .ago { text-align:right; color:#6f665f }
 `;
 // ring around the HUB (order set in network.sh); side nodes put their labels below, anchored inward so they stay
 // inside the svg; the last two sit top/bottom centre, so they get the short names
@@ -957,7 +973,9 @@ const savedView = () => { try { return localStorage.getItem("conn-view") || "LIV
 export const initialState = { output: "", view: savedView() };
 export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: ev.view }
   : ev.type === "VPN" ? { ...prev, vpnBusy: ev.busy }
-  : ev.type === "SPEED" ? { ...prev, speed: ev.speed, testing: ev.testing } : { ...prev, output: ev.output, error: ev.error };
+  : ev.type === "SPEED" ? { ...prev, speed: ev.speed, testing: ev.testing }
+  : ev.type === "HOV" ? { ...prev, hov: ev.k } : ev.type === "ARM" ? { ...prev, arm: ev.on }
+  : { ...prev, output: ev.output, error: ev.error };
 const problem = n => (window.__offline = n.ip === "offline" || n.services.every(x => !x.ms)) ? "No internet" : null;
 // per-service [amber from, red from] in ms, set from how each one reaches Nairobi (measured 2026-10-04/22, DNS + TCP connect):
 // Meta, TikTok and Google sit on edge caches in Kenya (~20ms); Apple and Netflix are local too but their DNS takes
@@ -1134,7 +1152,42 @@ const Link = ({ n, speed, testing, test, busy, setVpn }) => {
   );
 };
 
-export const render = ({ output, view, speed: mine, testing: busy, vpnBusy }, dispatch) => {
+// DATA: how much you've used on each Wi-Fi network (wifiusage.py, keyed by router, counted every refresh)
+const gb = b => b >= 1e9 ? [(b / 1e9).toFixed(b >= 1e11 ? 0 : b >= 1e10 ? 1 : 2), "GB"] : b >= 1e6 ? [(b / 1e6).toFixed(b >= 1e8 ? 0 : 1), "MB"] : [Math.round(b / 1e3), "KB"];
+const gbs = b => gb(b).join(" ");
+const day = (k, t) => { const d = new Date(); d.setDate(d.getDate() - (13 - k)); return k === 13 ? "Today" : k === 12 ? "Yesterday" : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); };
+const seenAgo = t => { const m = (Date.now() / 1000 - t) / 60; return m < 2 ? "now" : m < 60 ? Math.round(m) + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago"; };
+const netName = x => x.name || "Network ··" + x.tag;
+const Data = ({ n, hov, setHov, arm, reset }) => {
+  const nets = (n && n.usage) || [], cur = nets.find(x => x.cur), others = nets.filter(x => !x.cur).slice(0, cur ? 2 : 4);
+  const sum = v => v[0] + v[1], stat = (label, v) => { const [a, u] = gb(sum(v)); return (
+    <div className="stat"><div className="rl">{label}</div><div className="rate">{a}<small>{u}</small></div>
+      <div className="ud">↓ {gbs(v[0])} · ↑ {gbs(v[1])}</div></div>); };
+  const max = cur ? Math.max(1, ...cur.spark) : 1;
+  const since = cur && new Date(cur.since * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  return (
+    <div className="data">
+      <div className="dh">
+        <span className="v">{cur ? netName(cur) : <span className="muted">Not on Wi‑Fi</span>}</span>
+        {cur && <span className="r">since {since}
+          <span className={"go" + (arm ? " busy" : "")} title="Start this network's count from zero (e.g. a new data bundle)"
+            onClick={() => reset(cur.id)}>{arm ? "reset?" : "↺"}</span></span>}
+      </div>
+      {cur && <div className="stats num">{stat("TODAY", cur.today)}{stat("THIS MONTH", cur.month)}{stat("SINCE " + since.toUpperCase(), cur.total)}</div>}
+      {cur && <div className="days" onMouseLeave={() => setHov(null)}>{cur.spark.map((b, k) =>
+        <span key={k} className={(k === 13 ? "today " : "") + (hov === k ? "hov" : "")} onMouseEnter={() => setHov(k)}>
+          <i style={{ height: b ? Math.max(2, b / max * 100) + "%" : 0 }} /></span>)}</div>}
+      {cur && <div className="cap num">{hov !== null && hov !== undefined
+        ? <span>{day(hov)} · <span style={{ color: "#f3ece6" }}>{gbs(cur.spark[hov])}</span></span> : <span>Last 14 days</span>}
+        <span>avg {gbs(cur.spark.reduce((a, b) => a + b, 0) / Math.max(1, cur.spark.filter(Boolean).length))}/day</span></div>}
+      {others.length > 0 && <div className="nets">{others.map(x =>
+        <div className="net num" key={x.id}><b>{netName(x)}</b><span>{gbs(sum(x.month))} this month</span><span className="ago">{seenAgo(x.seen)}</span></div>)}</div>}
+      {!nets.length && <div className="d muted" style={{ marginTop: 10 }}>Counting starts on the next refresh.</div>}
+    </div>
+  );
+};
+
+export const render = ({ output, view, speed: mine, testing: busy, vpnBusy, hov, arm }, dispatch) => {
   let n = null; try { n = JSON.parse(output); } catch (e) {}
   const pick = v => { try { localStorage.setItem("conn-view", v); } catch (e) {} dispatch({ type: "VIEW", view: v }); };
   // a test started from the button wins until the regular refresh has a newer result
@@ -1147,12 +1200,21 @@ export const render = ({ output, view, speed: mine, testing: busy, vpnBusy }, di
   const setVpn = c => { if (vpnBusy) return; dispatch({ type: "VPN", busy: c });
     run(`~/.stark/vpn.sh ${c} >/dev/null; ~/.stark/network.sh`).then(out => dispatch({ type: "NET", output: out }))
       .catch(() => {}).then(() => dispatch({ type: "VPN", busy: null })); };
+  // hover a day's bar to read it (falls back after 8 s idle: Übersicht can miss the mouse leaving into a gap)
+  const setHov = k => { clearTimeout(window.__connHov); dispatch({ type: "HOV", k });
+    if (k !== null) window.__connHov = setTimeout(() => dispatch({ type: "HOV", k: null }), 8000); };
+  // reset takes two clicks: the first arms it for 4 s
+  const reset = id => { clearTimeout(window.__connArm);
+    if (!arm) { dispatch({ type: "ARM", on: true }); window.__connArm = setTimeout(() => dispatch({ type: "ARM", on: false }), 4000); return; }
+    dispatch({ type: "ARM", on: false });
+    run(`%%PY%% ~/.stark/wifiusage.py reset ${id} >/dev/null; ~/.stark/network.sh`).then(out => dispatch({ type: "NET", output: out })).catch(() => {}); };
   return (
     <div>
       <header><span style={{ color: "#ffb35c" }}>⟡</span><h1>CONNECTIONS</h1>
         <span className="sub">{n && n.vpn && <span className="vpn" title={n.vpn.name}>VPN{n.vpn.tor ? " " + n.vpn.cc.toUpperCase() : ""}</span>}
-          <span className="seg">{["LIVE", "LINK"].map(v => <span key={v} className={view === v ? "on" : ""} onClick={() => pick(v)}>{v}</span>)}</span></span></header>
-      {view === "LINK" ? <Link n={n} speed={speed} testing={testing} test={test} busy={vpnBusy} setVpn={setVpn} /> : <Live n={n} />}
+          <span className="seg">{["LIVE", "LINK", "DATA"].map(v => <span key={v} className={view === v ? "on" : ""} onClick={() => pick(v)}>{v}</span>)}</span></span></header>
+      {view === "LINK" ? <Link n={n} speed={speed} testing={testing} test={test} busy={vpnBusy} setVpn={setVpn} />
+        : view === "DATA" ? <Data n={n} hov={hov} setHov={setHov} arm={arm} reset={reset} /> : <Live n={n} />}
     </div>
   );
 };''')
