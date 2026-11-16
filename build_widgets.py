@@ -1206,6 +1206,8 @@ const Data = ({ n, st, act }) => {
       {on ? <div className="ud"><span className="rs" onClick={() => act.reset(x.id, key)}>↺ reset</span></div>
         : <div className="ud">↓ {gbs(v[0])} · ↑ {gbs(v[1])}</div>}</div>); };
   const max = Math.max(1, ...x.spark);
+  // average over finished days only (today is still running), counting days this network was actually used
+  const full = x.spark.slice(0, 13).filter(Boolean), avg = full.length ? full.reduce((a, b) => a + b, 0) / full.length : null;
   const step = d => act.sel(nets[(i + d + nets.length) % nets.length].id);
   return (
     <div className="data">
@@ -1226,7 +1228,7 @@ const Data = ({ n, st, act }) => {
           {b > 0 && <i style={{ height: Math.max(2, b / max * 100) + "%" }} />}</span>)}</div>
       <div className="cap num">{st.hov !== null && st.hov !== undefined
         ? <span>{day(st.hov)} · <span style={{ color: "#f3ece6" }}>{gbs(x.spark[st.hov])}</span></span> : <span>Last 14 days</span>}
-        <span>avg {gbs(x.spark.reduce((a, b) => a + b, 0) / Math.max(1, x.spark.filter(Boolean).length))}/day</span></div>
+        {avg !== null ? <span>avg {gbs(avg)}/day</span> : <span className="muted">avg after 1 full day</span>}</div>
     </div>
   );
 };
