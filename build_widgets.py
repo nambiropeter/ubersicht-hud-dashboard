@@ -953,12 +953,26 @@ export const className = `
   .data { padding:6px 22px 0 }
   .dh { display:flex; align-items:baseline; gap:8px }
   .dh .v { flex:1 } .dh .r { white-space:nowrap }
+  .dh .nm { cursor:pointer } .dh .nm em { font-style:normal; font-size:14px; color:#6f665f; margin-left:6px }
+  .dh .nm:hover em { color:#ffb35c }
+  .live-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#4ade80; margin-right:7px; vertical-align:middle }
+  .step { margin-left:8px; color:#8c8178 } .step span { padding:0 5px; color:#e6dcd2; cursor:pointer } .step span:hover { color:#ffb35c }
   .stats { display:grid; grid-template-columns: repeat(3, 1fr); margin-top:8px }
-  .stat .rl { margin-top:0 } .stat .rate { font-size:22px }
+  .stat .rl { margin-top:0; position:relative; white-space:nowrap; letter-spacing:.12em; padding-right:16px }
+  .stat .rate { font-size:22px }
+  .stat .tr { position:absolute; right:10px; top:-2px; padding:0 3px; color:#8c8178; cursor:pointer; opacity:0; transition: opacity .15s }
+  .stat:hover .tr { opacity:1 } .stat .tr:hover { color:#ffb35c }
+  .stat.armed .rl { color:#ffb35c; cursor:pointer } .stat.armed .tr { opacity:1; color:#ffb35c }
+  .q { flex:1; min-width:0; background:rgba(0,0,0,.22); border:1px solid rgba(255,255,255,.08); border-radius:6px; padding:4px 8px;
+       color:#f3ece6; font: 12px -apple-system, sans-serif; outline:none } .q:focus { border-color:rgba(255,179,92,.5) }
+  .dh .go { margin-left:0 }
+  .plist { margin-top:8px; max-height:142px; overflow-y:auto }
+  .plist .net { cursor:pointer } .plist .net:hover b, .plist .net.on b { color:#ffb35c }
+  .hint { font-size:9.5px; color:#6f665f; margin-top:6px }
   .stat .ud { font-size:9.5px; color:#6f665f; margin-top:1px; white-space:nowrap }
-  .days { display:flex; align-items:flex-end; gap:3px; height:38px; margin-top:10px }
+  .days { display:flex; align-items:flex-end; gap:3px; height:38px; margin-top:10px; border-bottom:1px solid rgba(255,255,255,.07) }
   .days span { flex:1; height:100%; display:flex; align-items:flex-end; cursor:default }
-  .days i { display:block; width:100%; min-height:1px; border-radius:2px 2px 0 0; background:#ffb35c; opacity:.45; transition: opacity .15s }
+  .days i { display:block; width:100%; border-radius:2px 2px 0 0; background:#ffb35c; opacity:.45; transition: opacity .15s }
   .days span.today i, .days span.hov i { opacity:1 }
   .cap { display:flex; justify-content:space-between; font-size:9.5px; color:#8c8178; margin-top:3px; letter-spacing:.04em }
   .nets { margin-top:6px }
@@ -975,6 +989,9 @@ export const updateState = (ev, prev) => ev.type === "VIEW" ? { ...prev, view: e
   : ev.type === "VPN" ? { ...prev, vpnBusy: ev.busy }
   : ev.type === "SPEED" ? { ...prev, speed: ev.speed, testing: ev.testing }
   : ev.type === "HOV" ? { ...prev, hov: ev.k } : ev.type === "ARM" ? { ...prev, arm: ev.on }
+  : ev.type === "SEL" ? { ...prev, sel: ev.sel, pick: false, q: "", hov: null } : ev.type === "PICK" ? { ...prev, pick: ev.on, q: "" }
+  : ev.type === "Q" ? { ...prev, q: ev.q }
+  : ev.type === "USAGE" ? { ...prev, output: (() => { try { return JSON.stringify({ ...JSON.parse(prev.output), usage: ev.usage }); } catch (e) { return prev.output; } })() }
   : { ...prev, output: ev.output, error: ev.error };
 const problem = n => (window.__offline = n.ip === "offline" || n.services.every(x => !x.ms)) ? "No internet" : null;
 // per-service [amber from, red from] in ms, set from how each one reaches Nairobi (measured 2026-10-04/22, DNS + TCP connect):
@@ -1158,36 +1175,62 @@ const gbs = b => gb(b).join(" ");
 const day = (k, t) => { const d = new Date(); d.setDate(d.getDate() - (13 - k)); return k === 13 ? "Today" : k === 12 ? "Yesterday" : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); };
 const seenAgo = t => { const m = (Date.now() / 1000 - t) / 60; return m < 2 ? "now" : m < 60 ? Math.round(m) + "m ago" : m < 1440 ? Math.round(m / 60) + "h ago" : Math.round(m / 1440) + "d ago"; };
 const netName = x => x.name || "Network ··" + x.tag;
-const Data = ({ n, hov, setHov, arm, reset }) => {
-  const nets = (n && n.usage) || [], cur = nets.find(x => x.cur), others = nets.filter(x => !x.cur).slice(0, cur ? 2 : 4);
-  const sum = v => v[0] + v[1], stat = (label, v) => { const [a, u] = gb(sum(v)); return (
-    <div className="stat"><div className="rl">{label}</div><div className="rate">{a}<small>{u}</small></div>
+const dm = t => new Date(t * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+const isToday = t => new Date(t * 1000).toDateString() === new Date().toDateString();
+const Data = ({ n, st, act }) => {
+  const nets = (n && n.usage) || [], cur = nets.find(x => x.cur);
+  const x = nets.find(y => y.id === st.sel) || cur || nets[0], i = x ? nets.indexOf(x) : -1;
+  const arm = st.arm, sum = v => v[0] + v[1];
+  if (st.pick) {
+    const q = (st.q || "").trim().toLowerCase();
+    const hits = nets.filter(y => !q || netName(y).toLowerCase().includes(q) || y.tag.toLowerCase().includes(q));
+    return (
+      <div className="data">
+        <div className="dh"><input className="q" autoFocus placeholder="Search networks" value={st.q || ""}
+          onChange={e => act.q(e.target.value)} onKeyDown={e => e.key === "Escape" && act.pick(false)} />
+          <span className="go" onClick={() => act.pick(false)}>done</span></div>
+        <div className="plist">{hits.map(y =>
+          <div className={"net num" + (x && y.id === x.id ? " on" : "")} key={y.id} onClick={() => act.sel(y.id)}>
+            <b>{y.cur && <i className="live-dot" />}{netName(y)}</b><span>{gbs(sum(y.month))} this month</span>
+            <span className="ago">{y.cur ? "now" : seenAgo(y.seen)}</span></div>)}
+          {!hits.length && <div className="d muted">{nets.length ? "No network matches “" + st.q + "”" : "No networks yet"}</div>}
+          <div className="hint">A network is listed once you've used it with the dashboard running.</div></div>
+      </div>);
+  }
+  if (!x) return <div className="data"><div className="d muted" style={{ marginTop: 10 }}>{!n ? "Reading…" : "Counting starts on the next refresh."}</div></div>;
+  // each tile resets on its own (two clicks); ↺ ALL in the header does all three at once
+  const tile = (key, label, v) => { const [a, u] = gb(sum(v)), on = arm === x.id + key; return (
+    <div className={"stat" + (on ? " armed" : "")}>
+      <div className="rl" onClick={() => on && act.reset(x.id, key)}>{on ? "RESET?" : label}
+        <span className="tr" title="Reset this count" onClick={e => { e.stopPropagation(); act.reset(x.id, key); }}>↺</span></div>
+      <div className="rate">{a}<small>{u}</small></div>
       <div className="ud">↓ {gbs(v[0])} · ↑ {gbs(v[1])}</div></div>); };
-  const max = cur ? Math.max(1, ...cur.spark) : 1;
-  const since = cur && new Date(cur.since * 1000).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+  const max = Math.max(1, ...x.spark), allOn = arm === x.id + "all";
+  const step = d => act.sel(nets[(i + d + nets.length) % nets.length].id);
   return (
     <div className="data">
       <div className="dh">
-        <span className="v">{cur ? netName(cur) : <span className="muted">Not on Wi‑Fi</span>}</span>
-        {cur && <span className="r">since {since}
-          <span className={"go" + (arm ? " busy" : "")} title="Start this network's count from zero (e.g. a new data bundle)"
-            onClick={() => reset(cur.id)}>{arm ? "reset?" : "↺"}</span></span>}
+        <span className="v nm" title="Find a network" onClick={() => act.pick(true)}>{x.cur && <i className="live-dot" />}{netName(x)}<em>⌕</em></span>
+        <span className="r">{!x.cur && <span className="muted">seen {seenAgo(x.seen)}</span>}
+          {nets.length > 1 && <span className="step"><span onClick={() => step(-1)}>‹</span>{i + 1}/{nets.length}<span onClick={() => step(1)}>›</span></span>}
+          <span className={"go" + (allOn ? " busy" : "")} title="Zero today, this month and the bundle count (e.g. a new data bundle)"
+            onClick={() => act.reset(x.id, "all")}>{allOn ? "reset all?" : "↺ all"}</span></span>
       </div>
-      {cur && <div className="stats num">{stat("TODAY", cur.today)}{stat("THIS MONTH", cur.month)}{stat("SINCE " + since.toUpperCase(), cur.total)}</div>}
-      {cur && <div className="days" onMouseLeave={() => setHov(null)}>{cur.spark.map((b, k) =>
-        <span key={k} className={(k === 13 ? "today " : "") + (hov === k ? "hov" : "")} onMouseEnter={() => setHov(k)}>
-          <i style={{ height: b ? Math.max(2, b / max * 100) + "%" : 0 }} /></span>)}</div>}
-      {cur && <div className="cap num">{hov !== null && hov !== undefined
-        ? <span>{day(hov)} · <span style={{ color: "#f3ece6" }}>{gbs(cur.spark[hov])}</span></span> : <span>Last 14 days</span>}
-        <span>avg {gbs(cur.spark.reduce((a, b) => a + b, 0) / Math.max(1, cur.spark.filter(Boolean).length))}/day</span></div>}
-      {others.length > 0 && <div className="nets">{others.map(x =>
-        <div className="net num" key={x.id}><b>{netName(x)}</b><span>{gbs(sum(x.month))} this month</span><span className="ago">{seenAgo(x.seen)}</span></div>)}</div>}
-      {!nets.length && <div className="d muted" style={{ marginTop: 10 }}>Counting starts on the next refresh.</div>}
+      <div className="stats num">
+        {tile("today", x.todayFrom ? "TODAY · " + hm(x.todayFrom) : "TODAY", x.today)}
+        {tile("month", x.monthFrom ? "MONTH · " + dm(x.monthFrom).toUpperCase() : "THIS MONTH", x.month)}
+        {tile("since", "SINCE " + (isToday(x.since) ? hm(x.since) : dm(x.since).toUpperCase()), x.total)}</div>
+      <div className="days" onMouseLeave={() => act.hov(null)}>{x.spark.map((b, k) =>
+        <span key={k} className={(k === 13 ? "today " : "") + (st.hov === k ? "hov" : "")} onMouseEnter={() => act.hov(k)}>
+          {b > 0 && <i style={{ height: Math.max(2, b / max * 100) + "%" }} />}</span>)}</div>
+      <div className="cap num">{st.hov !== null && st.hov !== undefined
+        ? <span>{day(st.hov)} · <span style={{ color: "#f3ece6" }}>{gbs(x.spark[st.hov])}</span></span> : <span>Last 14 days</span>}
+        <span>avg {gbs(x.spark.reduce((a, b) => a + b, 0) / Math.max(1, x.spark.filter(Boolean).length))}/day</span></div>
     </div>
   );
 };
 
-export const render = ({ output, view, speed: mine, testing: busy, vpnBusy, hov, arm }, dispatch) => {
+export const render = ({ output, view, speed: mine, testing: busy, vpnBusy, hov, arm, sel, pick: picking, q }, dispatch) => {
   let n = null; try { n = JSON.parse(output); } catch (e) {}
   const pick = v => { try { localStorage.setItem("conn-view", v); } catch (e) {} dispatch({ type: "VIEW", view: v }); };
   // a test started from the button wins until the regular refresh has a newer result
@@ -1203,18 +1246,20 @@ export const render = ({ output, view, speed: mine, testing: busy, vpnBusy, hov,
   // hover a day's bar to read it (falls back after 8 s idle: Übersicht can miss the mouse leaving into a gap)
   const setHov = k => { clearTimeout(window.__connHov); dispatch({ type: "HOV", k });
     if (k !== null) window.__connHov = setTimeout(() => dispatch({ type: "HOV", k: null }), 8000); };
-  // reset takes two clicks: the first arms it for 4 s
-  const reset = id => { clearTimeout(window.__connArm);
-    if (!arm) { dispatch({ type: "ARM", on: true }); window.__connArm = setTimeout(() => dispatch({ type: "ARM", on: false }), 4000); return; }
-    dispatch({ type: "ARM", on: false });
-    run(`%%PY%% ~/.stark/wifiusage.py reset ${id} >/dev/null; ~/.stark/network.sh`).then(out => dispatch({ type: "NET", output: out })).catch(() => {}); };
+  // a reset takes two clicks: the first arms that one count for 4 s; the panel redraws from the reset's own output
+  const reset = (id, what) => { clearTimeout(window.__connArm);
+    if (arm !== id + what) { dispatch({ type: "ARM", on: id + what }); window.__connArm = setTimeout(() => dispatch({ type: "ARM", on: null }), 4000); return; }
+    dispatch({ type: "ARM", on: null });
+    run(`%%PY%% ~/.stark/wifiusage.py reset ${id} ${what}`).then(out => dispatch({ type: "USAGE", usage: JSON.parse(out) })).catch(() => {}); };
+  const act = { hov: setHov, reset, sel: id => dispatch({ type: "SEL", sel: id }), pick: on => dispatch({ type: "PICK", on }),
+    q: v => dispatch({ type: "Q", q: v }) };
   return (
     <div>
       <header><span style={{ color: "#ffb35c" }}>⟡</span><h1>CONNECTIONS</h1>
         <span className="sub">{n && n.vpn && <span className="vpn" title={n.vpn.name}>VPN{n.vpn.tor ? " " + n.vpn.cc.toUpperCase() : ""}</span>}
           <span className="seg">{["LIVE", "LINK", "DATA"].map(v => <span key={v} className={view === v ? "on" : ""} onClick={() => pick(v)}>{v}</span>)}</span></span></header>
       {view === "LINK" ? <Link n={n} speed={speed} testing={testing} test={test} busy={vpnBusy} setVpn={setVpn} />
-        : view === "DATA" ? <Data n={n} hov={hov} setHov={setHov} arm={arm} reset={reset} /> : <Live n={n} />}
+        : view === "DATA" ? <Data n={n} st={{ hov, arm, sel, pick: picking, q }} act={act} /> : <Live n={n} />}
     </div>
   );
 };''')
