@@ -958,14 +958,14 @@ export const className = `
   .live-dot { display:inline-block; width:6px; height:6px; border-radius:50%; background:#4ade80; margin-right:7px; vertical-align:middle }
   .step { margin-left:8px; color:#8c8178 } .step span { padding:0 5px; color:#e6dcd2; cursor:pointer } .step span:hover { color:#ffb35c }
   .stats { display:grid; grid-template-columns: repeat(3, 1fr); margin-top:8px }
-  .stat .rl { margin-top:0; position:relative; white-space:nowrap; letter-spacing:.12em; padding-right:16px }
+  .stat .rl { margin-top:0; white-space:nowrap; letter-spacing:.12em }
   .stat .rate { font-size:22px }
-  .stat .tr { position:absolute; right:10px; top:-2px; padding:0 3px; color:#8c8178; cursor:pointer; opacity:0; transition: opacity .15s }
-  .stat:hover .tr { opacity:1 } .stat .tr:hover { color:#ffb35c }
-  .stat.armed .rl { color:#ffb35c; cursor:pointer } .stat.armed .tr { opacity:1; color:#ffb35c }
+  .rs { display:inline-block; padding:0 8px; border-radius:5px; line-height:14px; color:#ffb35c; background:rgba(255,179,92,.12);
+        cursor:pointer; letter-spacing:.04em; animation: fadein .2s } .rs:hover { background:rgba(255,179,92,.24) }
+  .go.warn { color:#ffb35c; background:rgba(255,179,92,.12) } .go.warn:hover { background:rgba(255,179,92,.24) }
   .q { flex:1; min-width:0; background:rgba(0,0,0,.22); border:1px solid rgba(255,255,255,.08); border-radius:6px; padding:4px 8px;
        color:#f3ece6; font: 12px -apple-system, sans-serif; outline:none } .q:focus { border-color:rgba(255,179,92,.5) }
-  .dh .go { margin-left:0 }
+  .dh .go { margin-left:0 } .dh .go + .go { margin-left:6px }
   .plist { margin-top:8px; max-height:142px; overflow-y:auto }
   .plist .net { cursor:pointer } .plist .net:hover b, .plist .net.on b { color:#ffb35c }
   .hint { font-size:9.5px; color:#6f665f; margin-top:6px }
@@ -1198,14 +1198,14 @@ const Data = ({ n, st, act }) => {
       </div>);
   }
   if (!x) return <div className="data"><div className="d muted" style={{ marginTop: 10 }}>{!n ? "Reading…" : "Counting starts on the next refresh."}</div></div>;
-  // each tile resets on its own (two clicks); ↺ ALL in the header does all three at once
-  const tile = (key, label, v) => { const [a, u] = gb(sum(v)), on = arm === x.id + key; return (
-    <div className={"stat" + (on ? " armed" : "")}>
-      <div className="rl" onClick={() => on && act.reset(x.id, key)}>{on ? "RESET?" : label}
-        <span className="tr" title="Reset this count" onClick={e => { e.stopPropagation(); act.reset(x.id, key); }}>↺</span></div>
+  // ↺ in the header switches to reset mode: each tile's ↓/↑ line becomes its own reset button (same spot, nothing moves)
+  const on = arm === x.id;
+  const tile = (key, label, v) => { const [a, u] = gb(sum(v)); return (
+    <div className="stat"><div className="rl">{label}</div>
       <div className="rate">{a}<small>{u}</small></div>
-      <div className="ud">↓ {gbs(v[0])} · ↑ {gbs(v[1])}</div></div>); };
-  const max = Math.max(1, ...x.spark), allOn = arm === x.id + "all";
+      {on ? <div className="ud"><span className="rs" onClick={() => act.reset(x.id, key)}>↺ reset</span></div>
+        : <div className="ud">↓ {gbs(v[0])} · ↑ {gbs(v[1])}</div>}</div>); };
+  const max = Math.max(1, ...x.spark);
   const step = d => act.sel(nets[(i + d + nets.length) % nets.length].id);
   return (
     <div className="data">
@@ -1213,8 +1213,9 @@ const Data = ({ n, st, act }) => {
         <span className="v nm" title="Find a network" onClick={() => act.pick(true)}>{x.cur && <i className="live-dot" />}{netName(x)}<em>⌕</em></span>
         <span className="r">{!x.cur && <span className="muted">seen {seenAgo(x.seen)}</span>}
           {nets.length > 1 && <span className="step"><span onClick={() => step(-1)}>‹</span>{i + 1}/{nets.length}<span onClick={() => step(1)}>›</span></span>}
-          <span className={"go" + (allOn ? " busy" : "")} title="Zero today, this month and the bundle count (e.g. a new data bundle)"
-            onClick={() => act.reset(x.id, "all")}>{allOn ? "reset all?" : "↺ all"}</span></span>
+          {on ? <span><span className="go warn" title="Zero today, this month and the bundle count (e.g. a new data bundle)"
+              onClick={() => act.reset(x.id, "all")}>reset all</span><span className="go" onClick={() => act.arm(null)}>cancel</span></span>
+            : <span className="go" title="Reset counts" onClick={() => act.arm(x.id)}>↺</span>}</span>
       </div>
       <div className="stats num">
         {tile("today", x.todayFrom ? "TODAY · " + hm(x.todayFrom) : "TODAY", x.today)}
@@ -1246,12 +1247,12 @@ export const render = ({ output, view, speed: mine, testing: busy, vpnBusy, hov,
   // hover a day's bar to read it (falls back after 8 s idle: Übersicht can miss the mouse leaving into a gap)
   const setHov = k => { clearTimeout(window.__connHov); dispatch({ type: "HOV", k });
     if (k !== null) window.__connHov = setTimeout(() => dispatch({ type: "HOV", k: null }), 8000); };
-  // a reset takes two clicks: the first arms that one count for 4 s; the panel redraws from the reset's own output
-  const reset = (id, what) => { clearTimeout(window.__connArm);
-    if (arm !== id + what) { dispatch({ type: "ARM", on: id + what }); window.__connArm = setTimeout(() => dispatch({ type: "ARM", on: null }), 4000); return; }
-    dispatch({ type: "ARM", on: null });
+  // reset mode (↺) lasts 10 s; a reset there applies at once and the panel redraws from the reset's own output
+  const armReset = id => { clearTimeout(window.__connArm); dispatch({ type: "ARM", on: id });
+    if (id) window.__connArm = setTimeout(() => dispatch({ type: "ARM", on: null }), 10000); };
+  const reset = (id, what) => { clearTimeout(window.__connArm); dispatch({ type: "ARM", on: null });
     run(`%%PY%% ~/.stark/wifiusage.py reset ${id} ${what}`).then(out => dispatch({ type: "USAGE", usage: JSON.parse(out) })).catch(() => {}); };
-  const act = { hov: setHov, reset, sel: id => dispatch({ type: "SEL", sel: id }), pick: on => dispatch({ type: "PICK", on }),
+  const act = { hov: setHov, reset, arm: armReset, sel: id => dispatch({ type: "SEL", sel: id }), pick: on => dispatch({ type: "PICK", on }),
     q: v => dispatch({ type: "Q", q: v }) };
   return (
     <div>
