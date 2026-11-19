@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Sky over Nairobi: live aircraft around you and the ISS's next pass, for the desktop widget.
-Aircraft come from adsb.lol (free community ADS-B, no key). Airline routes come from adsbdb.com (checked against where the plane really is), operators from hexdb.io;
+Aircraft come from adsb.fi open data, with adsb.lol as backup (free community ADS-B, no key). Airline routes come from adsbdb.com (checked against where the plane really is), operators from hexdb.io;
 flights with no public route (charter, private, military) get a best guess from their track instead.
 ISS passes are worked out here from CelesTrak's orbit elements (TLE): a J2 orbit model is accurate to well under a
 minute for pass times over the next few days, so no extra packages are needed.
@@ -11,7 +11,7 @@ LAT, LON = -1.2833, 36.8167          # same spot as weather.sh
 RANGE_KM = 225                        # radar radius
 S = os.path.expanduser("~/.stark")
 ROUTES, TLE, PASS = f"{S}/.sky-routes.json", f"{S}/.sky-tle", f"{S}/.sky-iss.json"
-UA = {"User-Agent": "desktop-dashboard (Übersicht widget)", "Accept": "application/json"}
+UA = {"User-Agent": "desktop-dashboard (Ubersicht widget)", "Accept": "application/json"}
 
 TYPES = {"A359": "A350-900", "A35K": "A350-1000", "A332": "A330-200", "A333": "A330-300", "A339": "A330-900neo",
          "A319": "A319", "A320": "A320", "A20N": "A320neo", "A321": "A321", "A21N": "A321neo", "A388": "A380",
@@ -142,8 +142,23 @@ def guess(x):
     return "Heading " + DIRS[round(x["trk"] / 45) % 8]
 
 
+# adsb.fi open data first (personal use, 1 req/s, no daily cap); adsb.lol caps at 500 calls a day (HTTP 429 after),
+# so it's only the backup. Same readsb JSON from both.
+FEEDS = ["https://opendata.adsb.fi/api/v3/lat/{lat}/lon/{lon}/dist/{nm}", "https://api.adsb.lol/v2/point/{lat}/{lon}/{nm}"]
+
+
+def feed():
+    nm, err = round(RANGE_KM / 1.852) + 5, None
+    for u in FEEDS:
+        try:
+            d = get(u.format(lat=LAT, lon=LON, nm=nm), 6)
+            if isinstance(d.get("ac"), list): return d
+        except Exception as e: err = e
+    raise err or RuntimeError("no feed")
+
+
 def aircraft():
-    d = get(f"https://api.adsb.lol/v2/point/{LAT}/{LON}/{round(RANGE_KM / 1.852) + 5}")
+    d = feed()
     out, ground = [], 0
     for a in d.get("ac") or []:
         if a.get("lat") is None or (a.get("seen_pos") or 0) > 60: continue
