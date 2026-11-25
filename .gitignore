@@ -29,3 +29,5 @@ portfolio.json
 .picks-state.json
 .sky-*
 .wifi-usage*
+.picks-found.json
+.picks-meta.json.tmp
