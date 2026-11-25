@@ -31,3 +31,5 @@ portfolio.json
 .wifi-usage*
 .picks-found.json
 .picks-meta.json.tmp
+calendar
+.cal.json*

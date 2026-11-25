@@ -9,6 +9,8 @@ if not os.path.exists(f"{_S}/wifi") or os.path.getmtime(f"{_S}/wifi.swift") > os
     os.system(f"swiftc -O {_S}/wifi.swift -o {_S}/wifi")
 if not os.path.exists(f"{_S}/hudcursor") or os.path.getmtime(f"{_S}/hudcursor.swift") > os.path.getmtime(f"{_S}/hudcursor"):
     os.system(f"swiftc -O {_S}/hudcursor.swift -o {_S}/hudcursor")
+if not os.path.exists(f"{_S}/calendar") or os.path.getmtime(f"{_S}/calendar.swift") > os.path.getmtime(f"{_S}/calendar"):
+    os.system(f"swiftc -O {_S}/calendar.swift -o {_S}/calendar")
 W = os.path.expanduser("~/Library/Application Support/Übersicht/widgets")
 # Übersicht runs widgets with a minimal PATH, so bake in the absolute python3 path at build time
 PY = shutil.which("python3") or "/usr/bin/python3"
@@ -176,20 +178,31 @@ const Logo = ({ s, big }) => <img className={"lg" + (big ? " big" : "")} src={`l
   onError={e => { const i = e.currentTarget, n = +(i.dataset.n || 0); i.style.display = "none"; if (n < 5) setTimeout(() => {
     i.dataset.n = n + 1; i.style.display = ""; i.src = i.src.split("?")[0] + "?" + Date.now(); }, 60000); }} />;"""
 
-HOURS = """// World clocks under the main time (hover one to put it on the big display)
-const CITIES = [
-  { city: "NEW YORK", tz: "America/New_York", cc: "US" },
-  { city: "LONDON",   tz: "Europe/London",    cc: "GB" },
-  { city: "TOKYO",    tz: "Asia/Tokyo",       cc: "JP" },
-];
-const localParts = (tz, now) => {
-  const p = Object.fromEntries(new Intl.DateTimeFormat("en-US", { timeZone: tz, hour12: false, hour: "2-digit", minute: "2-digit" })
-    .formatToParts(now).map(x => [x.type, x.value]));
-  const h = +p.hour % 24;
-  return { h, hm: String(h).padStart(2, "0") + ":" + p.minute };
+# Day timeline under the big clock: sunrise/sunset/twilight are computed in the widget for the weather location
+# (LAT/LON read from weather.sh), calendar events come from ~/.stark/calendar (calendar.swift, EventKit).
+_ll = re.search(r"LAT=(-?[\d.]+)\s+LON=(-?[\d.]+)", open(f"{_S}/weather.sh").read())
+HOURS = """// Day timeline: sun maths (no network) for LAT/LON
+const LAT = %s, LON = %s, RAD = Math.PI / 180, DAY = 864e5;
+// sunrise (rising) or sunset on the local day of d, at solar zenith zen: 90.833 = sunrise/sunset, 96 = civil dawn/dusk
+const sunAt = (d, zen, rising) => {
+  const y = d.getFullYear(), day0 = Date.UTC(y, d.getMonth(), d.getDate()), N = Math.round((day0 - Date.UTC(y, 0, 0)) / DAY);
+  const lh = LON / 15, t = N + ((rising ? 6 : 18) - lh) / 24, M = 0.9856 * t - 3.289;
+  const L = ((M + 1.916 * Math.sin(M * RAD) + 0.020 * Math.sin(2 * M * RAD) + 282.634) %% 360 + 360) %% 360;
+  let RA = ((Math.atan(0.91764 * Math.tan(L * RAD)) / RAD) %% 360 + 360) %% 360;
+  RA = (RA + Math.floor(L / 90) * 90 - Math.floor(RA / 90) * 90) / 15;
+  const sd = 0.39782 * Math.sin(L * RAD), cd = Math.cos(Math.asin(sd));
+  const ch = (Math.cos(zen * RAD) - sd * Math.sin(LAT * RAD)) / (cd * Math.cos(LAT * RAD));
+  if (ch > 1 || ch < -1) return null;
+  const H = (rising ? 360 - Math.acos(ch) / RAD : Math.acos(ch) / RAD) / 15;
+  let r = day0 + (((H + RA - 0.06571 * t - 6.622 - lh) %% 24 + 24) %% 24) * 36e5;
+  const noon = new Date(y, d.getMonth(), d.getDate(), 12).getTime();
+  while (r - noon > DAY / 2) r -= DAY; while (noon - r > DAY / 2) r += DAY;
+  return r;
 };
-"""
-
+const sunDay = d => ({ dawn: sunAt(d, 96, true), rise: sunAt(d, 90.833, true), set: sunAt(d, 90.833, false), dusk: sunAt(d, 96, false) });
+const hhmm = ms => new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+const dur = ms => { const m = Math.round(Math.abs(ms) / 6e4), h = Math.floor(m / 60); return h ? h + "h " + String(m %% 60).padStart(2, "0") + "m" : m + "m"; };
+""" % (_ll.group(1), _ll.group(2)) if _ll else None
 # Time zone -> country code (from the system tz database), so the clock can show the flag of wherever the Mac thinks it is.
 _zones = {}
 for _f in ("/usr/share/zoneinfo/zone.tab",):
@@ -424,8 +437,11 @@ def widget(name, body):
 
 
 # ───────────────────────── CLOCK ─────────────────────────
-widget("clock", r'''// Clock, greeting and world clocks (hover a city to put its time on the big display).
-export const command = "date +%s";
+widget("clock", r'''// Clock, greeting and a day timeline (sun + calendar). Hover the timeline to scrub the big display through the day.
+// The calendar is read every 5 min in the background (the cache is touched first so a slow permission prompt
+// doesn't start a new run every second); the 1 s command itself only cats the cache.
+export const command = `date +%s; f=~/.stark/.cal.json; [ -n "$(find $f -mmin -5 2>/dev/null)" ] || { touch $f;
+  (~/.stark/calendar > $f.tmp 2>/dev/null && mv $f.tmp $f) </dev/null >/dev/null 2>&1 & }; cat $f 2>/dev/null`;
 export const refreshFrequency = 1000;
 export const className = `
   %%POS%%%%SHARED%%
@@ -440,49 +456,88 @@ export const className = `
   .date { margin-top:15px; font: 500 16px -apple-system, sans-serif; color:#ffffff; letter-spacing:.01em }
   .date b { color:#f5b14c; font-weight:600 }
   .greet { margin-top:2px; font-size:12.5px; letter-spacing:.06em; color:#a39a92 } .greet b { color:#ebe5dd; font-weight:600 }
-  .ex { display:grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap:10px; margin-top:12px }
-  .cell { background:rgba(255,255,255,.04); border:1px solid rgba(255,255,255,.06); border-radius:12px; padding:8px 11px; min-width:0 }
-  .cell .c { font: 700 8.5px Orbitron, sans-serif; letter-spacing:.1em; color:#8c8178; white-space:nowrap; overflow:hidden }
-  .cell .t { font-size:17px; font-weight:500; margin:3px 0 2px }
-  .cell .s { font-size:10px; white-space:nowrap; color:#a39a92 }
   .here { position:absolute; text-align:center; cursor:default }
   .here .f { font-size:38px; line-height:1; display:inline-block; transform-origin: 8% 50%; filter: drop-shadow(0 3px 8px rgba(0,0,0,.45)) }
   .here:hover .f { animation: wave 1.1s ease-in-out infinite }
   @keyframes wave { 0%, 100% { transform: perspective(80px) rotateY(0) skewY(0) } 25% { transform: perspective(80px) rotateY(-18deg) skewY(-3deg) }
                     75% { transform: perspective(80px) rotateY(12deg) skewY(2deg) } }
   .here .n { font: 700 7.5px Orbitron, sans-serif; letter-spacing:.18em; color:#8c8178; margin-top:4px }
-  .cell { cursor:default; transition: background .25s, border-color .25s, transform .25s cubic-bezier(.2,.8,.2,1) }
-  .cell:hover { transform: translateY(-2px) }
-  .cell:hover, .cell.sel { background:rgba(255,255,255,.075); border-color: rgba(245,177,76,.35) }
   .stage { display:grid }
   .view { grid-area: 1 / 1; position:relative; opacity:0; visibility:hidden; transition: opacity .25s, visibility .25s }
   .view.on { opacity:1; visibility:visible }
   .here { top:0; right:0 }
+  /* day timeline: 00:00 to 24:00, night / dawn / golden hour / day shaded from the real sun, calendar events on top */
+  .tl { margin-top:16px; cursor:default }
+  .cap { display:flex; justify-content:space-between; align-items:baseline; gap:10px; height:12px }
+  .cap .l { font: 700 8.5px Orbitron, sans-serif; letter-spacing:.12em; color:#8c8178; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .cap .l b { color:#f5b14c; font-weight:700 }
+  .cap .r { font-size:10.5px; color:#a39a92; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .cap .r b { color:#ebe5dd; font-weight:600 } .cap .r i { font-style:normal; color:#f5b14c }
+  .bar { position:relative; height:14px; margin:7px 0 5px; border-radius:7px }
+  .bar .sky, .bar .done { position:absolute; inset:0; border-radius:7px }
+  .bar .sky { opacity:.4; box-shadow: inset 0 0 0 1px rgba(255,255,255,.05) }
+  .bar .done { clip-path: inset(0 calc(100% - var(--now)) 0 0 round 7px 0 0 7px) }
+  .bar .ev { position:absolute; top:2px; bottom:2px; min-width:4px; border-radius:4px; background:rgba(245,177,76,.55);
+             box-shadow: 0 0 0 1px rgba(20,16,12,.55), 0 0 8px rgba(245,177,76,.35); transition: transform .2s, background .2s }
+  .bar .ev.past { background:rgba(235,229,221,.22); box-shadow: 0 0 0 1px rgba(20,16,12,.55) }
+  .bar .ev.hot { background:#f5b14c; transform: scaleY(1.35) }
+  .bar .now { position:absolute; top:-4px; bottom:-4px; width:2px; margin-left:-1px; border-radius:1px; background:#fff;
+              box-shadow: 0 0 6px rgba(255,200,130,.95), 0 0 14px rgba(245,177,76,.6); pointer-events:none }
+  .bar .scrub { position:absolute; top:-3px; bottom:-3px; width:1px; background:rgba(255,255,255,.55); pointer-events:none; opacity:0; transition: opacity .2s }
+  .bar:hover .scrub { opacity:1 }
+  .ticks { position:relative; height:11px; font-size:9.5px; color:#8c8178; font-variant-numeric: tabular-nums }
+  .ticks span { position:absolute; top:0; transform: translateX(-50%); white-space:nowrap }
+  .ticks span.a { transform:none } .ticks span.z { transform: translateX(-100%) }
+  .ticks span.sun { color:#c9a57a } .ticks span.sun i { font-style:normal; color:#f5b14c; margin-right:2px }
+  .view .time em { font-style:normal; font: 600 11px -apple-system, sans-serif; letter-spacing:.08em; color:#f5b14c; text-transform:uppercase }
 `;
 %%HOURS%%
 %%ZONES%%
 // "KE" -> 🇰🇪 (two regional indicator letters)
 const flag = cc => cc ? String.fromCodePoint(...[...cc.toUpperCase()].map(c => 0x1F1A5 + c.charCodeAt(0))) : "🌐";
 const region = cc => { try { return new Intl.DisplayNames(["en"], { type: "region" }).of(cc); } catch (e) { return cc; } };
-// Hover a city to put its clock on the big display; leaving the panel (or 8 s idle) brings yours back, like Weather.
-const pick = (root, k) => { if (!root) return;
-  root.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.dataset.k === k));
-  root.querySelectorAll(".cell").forEach(v => v.classList.toggle("sel", v.dataset.k === k)); };
+// The big display shows "here" or "scrub" (the time under the mouse on the timeline); leaving the panel or 8 s idle -> here.
+const pick = (root, k) => { if (root) root.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.dataset.k === k)); };
 const home = e => { const el = e.currentTarget; clearTimeout(window.__ckHome); window.__ckHome = setTimeout(() => pick(el, "here"), 8000); };
-// how far ahead (+) or behind (−) a time zone is from here, e.g. "−7h", "+5h 30m"
-const diff = (tz, now) => { const at = z => new Date(now.toLocaleString("en-US", z ? { timeZone: z } : {}));
-  const m = Math.round((at(tz) - at()) / 60000 / 15) * 15; if (!m) return "";
-  const a = Math.abs(m); return (m > 0 ? "+" : "−") + Math.floor(a / 60) + "h" + (a % 60 ? " " + a % 60 + "m" : ""); };
-const offset = (tz, now) => { const d = diff(tz, now); return !d ? "same time as you" : d + (d[0] === "+" ? " ahead" : " behind"); };
 // "21:15" with an amber colon
 const HM = s => { const [a, b] = s.split(":"); return [a, <i className="colon" key="c">:</i>, b]; };
 // weekday in amber, then the date, e.g. **Sunday** 1 November
-const DATE = (now, tz) => { const o = tz ? { timeZone: tz } : {};
-  return [<b key="w">{now.toLocaleDateString("en-GB", { ...o, weekday: "long" })}</b>, " " + now.toLocaleDateString("en-GB", { ...o, day: "numeric", month: "long" })]; };
+const DATE = now => [<b key="w">{now.toLocaleDateString("en-GB", { weekday: "long" })}</b>, " " + now.toLocaleDateString("en-GB", { day: "numeric", month: "long" })];
 const partOf = h => h < 5 ? ["night", "☾"] : h < 12 ? ["morning", "☀︎"] : h < 17 ? ["afternoon", "☀︎"] : h < 21 ? ["evening", "☾"] : ["night", "☾"];
-export const render = () => {
-  const now = new Date(), h = now.getHours();
+// what the sky is doing at time t
+const phase = (t, s) => !s.rise ? "Night" : t < s.dawn || t >= s.dusk ? "Night" : t < s.rise ? "Dawn" : t >= s.set ? "Dusk"
+  : t < s.rise + 36e5 || t >= s.set - 36e5 ? "Golden hour" : "Daylight";
+// background of the bar: cool night, red-orange twilight, warm day peaking at solar noon
+const skyGrad = (s, day0) => { if (!s.rise) return "rgba(120,135,180,.18)";
+  const p = t => Math.max(0, Math.min(100, (t - day0) / DAY * 100)).toFixed(2) + "%", noon = (s.rise + s.set) / 2;
+  const N = "rgba(120,135,185,.22)", T = "rgba(236,116,72,.75)", G = "rgba(245,160,70,.6)", D = "rgba(245,184,96,.5)", P = "rgba(255,222,165,.72)";
+  return `linear-gradient(90deg, ${N} 0%, ${N} ${p(s.dawn)}, ${T} ${p(s.rise)}, ${G} ${p(s.rise + 36e5)}, ${D} ${p(s.rise + 2 * 36e5)}, ${P} ${p(noon)}, `
+    + `${D} ${p(s.set - 2 * 36e5)}, ${G} ${p(s.set - 36e5)}, ${T} ${p(s.set)}, ${N} ${p(s.dusk)}, ${N} 100%)`; };
+const SCRUB = 5 * 6e4;  // the scrub snaps to 5 minutes, so the widget only re-renders when the shown time changes
+export const initialState = { output: "", scrub: null };
+export const updateState = (ev, prev) => ev.type === "SCRUB" ? { ...prev, scrub: ev.t } : { ...prev, output: ev.output ?? prev.output, error: ev.error };
+export const render = ({ output, scrub }, dispatch) => {
+  const now = new Date(), h = now.getHours(), t0 = now.getTime();
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone, cc = ZONES[tz], city = (tz.split("/").pop() || "").replace(/_/g, " ");
+  const day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime(), x = t => (t - day0) / DAY * 100 + "%";
+  const sun = sunDay(now), tmr = sunDay(new Date(day0 + DAY * 1.5));
+  let cal = { ok: false, ev: [] }; try { cal = JSON.parse((output || "").split("\n").slice(1).join("\n")) || cal; } catch (e) {}
+  const evs = (cal.ev || []).map(e => ({ ...e, s: e.s * 1000, e: e.e * 1000 }));
+  const timed = evs.filter(e => !e.all).sort((a, b) => a.s - b.s), today = timed.filter(e => e.e > day0 && e.s < day0 + DAY);
+  const allDay = evs.filter(e => e.all && e.s < day0 + DAY && e.e > day0);
+  // right caption: the event you're in, the next one (within 12 h), else the next sunrise / sunset
+  const cur = timed.find(e => e.s <= t0 && t0 < e.e), nxt = timed.find(e => e.s > t0 && e.s - t0 < 12 * 36e5);
+  const sunNext = [[sun.rise, "sunrise"], [sun.set, "sunset"], [tmr.rise, "sunrise"]].find(([t]) => t && t > t0);
+  const right = cur ? [<i key="i">now</i>, " · ", <b key="b">{cur.t}</b>, " · ends " + hhmm(cur.e)]
+    : nxt ? [<b key="b">{nxt.t}</b>, " in ", <i key="i">{dur(nxt.s - t0)}</i>]
+    : sunNext ? [sunNext[1] === "sunset" ? "☀︎ " : "☾ ", sunNext[1] + " in ", <i key="i">{dur(sunNext[0] - t0)}</i>] : "";
+  const pct = Math.floor((t0 - day0) / DAY * 100);
+  // scrub: the hovered time, what the sky does then, and the event at that time (if any)
+  const st = scrub, se = st != null && timed.find(e => e.s <= st && st < e.e);
+  const move = e => { const r = e.currentTarget.getBoundingClientRect(), f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    const t = day0 + Math.min(DAY - SCRUB, Math.round(f * DAY / SCRUB) * SCRUB);
+    if (t !== window.__ckScrub) { window.__ckScrub = t; dispatch({ type: "SCRUB", t }); }
+    pick(e.currentTarget.closest(".tl").parentElement, "scrub"); };
   return (
     <div onMouseLeave={e => pick(e.currentTarget, "here")} onMouseMove={home}>
       <div className="stage">
@@ -493,21 +548,33 @@ export const render = () => {
           <div className="date">{DATE(now)}</div>
           <div className="greet">Good {partOf(h)[0] === "night" ? "evening" : partOf(h)[0]}, <b>Anthony</b></div>
         </div>
-        {CITIES.map(c => { const t = localParts(c.tz, now); return (
-          <div className="view" data-k={c.city} key={c.city}>
-            <div className="here"><div className="f">{flag(c.cc)}</div><div className="n">{c.city}</div></div>
-            <div className="time num"><b>{HM(t.hm)}</b><span>{String(now.getSeconds()).padStart(2, "0")}</span></div>
-            <div className="date">{DATE(now, c.tz)}</div>
-            <div className="greet">{partOf(t.h)[1]} {partOf(t.h)[0]} there · {offset(c.tz, now)}</div>
-          </div>); })}
+        <div className="view" data-k="scrub">
+          <div className="time num"><b>{st != null ? HM(hhmm(st)) : ""}</b><em>{st == null ? "" : st > t0 ? "in " + dur(st - t0) : dur(t0 - st) + " ago"}</em></div>
+          <div className="date"><b>{st != null ? (se ? se.t : phase(st, sun)) : ""}</b>{st == null ? "" : se ? " · " + hhmm(se.s) + "–" + hhmm(se.e) : ""}</div>
+          <div className="greet">{st == null ? "" : se ? (se.loc || se.cal) + " · " + phase(st, sun).toLowerCase()
+            : sun.rise ? "Sunrise " + hhmm(sun.rise) + " · sunset " + hhmm(sun.set) + " · " + dur(sun.set - sun.rise) + " of light" : ""}</div>
+        </div>
       </div>
-      <div className="ex">
-        {CITIES.map(c => { const t = localParts(c.tz, now); return (
-          <div className="cell" key={c.city} data-k={c.city} onMouseEnter={e => pick(e.currentTarget.closest(".ex").parentElement, c.city)}>
-            <div className="c">{flag(c.cc)} {c.city}</div>
-            <div className="t num">{t.hm}</div>
-            <div className="s num">{partOf(t.h)[1]} {diff(c.tz, now) || "same time"}</div>
-          </div>); })}
+      <div className="tl">
+        <div className="cap">
+          <span className="l">{allDay.length ? <b>{allDay.map(e => e.t).join(" · ").toUpperCase()}</b> : "TODAY"} · {pct}%</span>
+          <span className="r">{right}</span>
+        </div>
+        <div className="bar" onMouseMove={move} onMouseLeave={e => pick(e.currentTarget.closest(".tl").parentElement, "here")}>
+          <div className="sky" style={{ background: skyGrad(sun, day0) }} />
+          <div className="done" style={{ background: skyGrad(sun, day0), "--now": x(t0) }} />
+          {today.map(e => <div key={e.s + e.t} className={"ev" + (e.e <= t0 ? " past" : "") + (se === e ? " hot" : "")}
+            style={{ left: x(Math.max(e.s, day0)), width: `calc(${x(Math.min(e.e, day0 + DAY))} - ${x(Math.max(e.s, day0))})` }} />)}
+          <div className="now" style={{ left: x(t0) }} />
+          <div className="scrub" style={{ left: st != null ? x(st) : "0%" }} />
+        </div>
+        <div className="ticks num">
+          <span className="a" style={{ left: 0 }}>00</span>
+          {sun.rise && <span className="sun" style={{ left: x(sun.rise) }}><i>↑</i>{hhmm(sun.rise)}</span>}
+          <span style={{ left: "50%" }}>12</span>
+          {sun.set && <span className="sun" style={{ left: x(sun.set) }}><i>↓</i>{hhmm(sun.set)}</span>}
+          <span className="z" style={{ left: "100%" }}>24</span>
+        </div>
       </div>
     </div>
   );
