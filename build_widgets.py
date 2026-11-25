@@ -1647,10 +1647,12 @@ export const render = ({ output, tab, genre = "all", sel }, dispatch) => {
   const p = sel || (genreItems.length > 0 ? genreItems[0] : d && d.pick);
   const moreCards = (genreItems.length > 0 ? genreItems.filter(x => x.key !== (p && p.key)) : (d && d.more) || []).slice(0, 6);
 
-  // coming up: releases + episodes, soonest first
+  // coming up: releases + episodes, soonest first; ones already out go after them (newest first), so a few
+  // films still in cinemas never push the upcoming ones off the list
   const up = d ? [...d.soon.map(x => ({ x, at: x.release, film: 1 })),
     ...d.eps.map(x => { const e = x.next && days(x.next.at) >= 0 ? x.next : x.prev; return { x, at: e.at, e }; })]
-    .sort((a, b) => a.at.localeCompare(b.at)).slice(0, 6) : [];
+    .sort((a, b) => { const pa = days(a.at) < 0, pb = days(b.at) < 0;
+      return pa !== pb ? pa - pb : pa ? b.at.localeCompare(a.at) : a.at.localeCompare(b.at); }).slice(0, 6) : [];
 
   const seenList = (d && d.seen_list) || [];
 
@@ -1829,11 +1831,11 @@ const Iss = ({ s }) => {
   if (!s) return <div className="iss"><div className="lbl">ISS</div><div className="s">Orbit data unavailable</div></div>;
   if (s.now.el >= 10) return <div className="iss now"><div className="lbl">ISS · NOW</div>
     <div className="t">Look {s.now.az}<small>{s.now.el}° up</small></div>
-    <div className="s">{s.now.sunlit ? <b>Sunlit · visible if clear</b> : "In Earth's shadow"}</div></div>;
+    <div className="s">{s.now.sunlit ? <b>Sunlit · visible if clear</b> : s.now.dark === false ? "Sky too bright to see it" : "In Earth's shadow"}</div></div>;
   const p = s.vis && s.vis.start - Date.now() / 1000 < 36 * 3600 ? s.vis : s.next;
   if (!p) return <div className="iss"><div className="lbl">ISS</div><div className="s">{s.now.km.toLocaleString("en-US")} km away</div></div>;
   return <div className="iss" title={`${s.now.km.toLocaleString("en-US")} km away at ${s.now.alt} km up`}>
-    <div className="top"><span className="lbl">ISS</span>{p.vis ? <span className="tag on">VISIBLE</span> : <span className="tag">DAYLIGHT</span>}</div>
+    <div className="top"><span className="lbl">ISS</span>{p.vis ? <span className="tag on">VISIBLE</span> : <span className="tag">{p.dark ? "IN SHADOW" : "DAYLIGHT"}</span>}</div>
     <div className="t num">{hm(p.start)}<small>{day(p.start) || "in " + inT(p.start)}</small></div>
     <div className="s">{p.from} → {p.to} · up to {p.max}°</div></div>;
 };

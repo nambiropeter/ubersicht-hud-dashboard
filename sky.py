@@ -263,11 +263,15 @@ def look(v_ecef):
     return math.degrees(math.atan2(u, math.hypot(e, n))), math.degrees(math.atan2(e, n)) % 360
 
 
+def sun_el(t):
+    """The Sun's elevation (degrees) here at time t."""
+    return look(tuple(x * 1.496e8 for x in ecef(sun(t), t)))[0]
+
+
 def visible(el, t):
     """True when the ISS is sunlit while the sky here is dark enough to see it (Sun below -6°)."""
     r, s = eci(el, t), sun(t)
-    sun_el, _ = look(tuple(x * 1.496e8 for x in ecef(s, t)))
-    if sun_el > -6: return False
+    if sun_el(t) > -6: return False
     d = sum(a * b for a, b in zip(r, s))
     return d > 0 or math.dist(r, tuple(d * x for x in s)) > RE
 
@@ -291,7 +295,8 @@ def passes(el, t0, hours=72, step=30, min_el=10):
         t += step
     if cur: out.append(cur)
     return [{"start": round(p["start"]), "end": round(p["end"]), "tmax": round(p["tmax"]), "max": round(p["max"]),
-             "from": compass(p["az0"]), "to": compass(p["az1"]), "dir": compass(p["azmax"]), "vis": p["vis"]} for p in out]
+             "from": compass(p["az0"]), "to": compass(p["az1"]), "dir": compass(p["azmax"]), "vis": p["vis"],
+             "dark": sun_el(p["tmax"]) < -6} for p in out]
 
 
 def iss():
@@ -300,12 +305,12 @@ def iss():
     lat, lon = math.degrees(math.asin(z / r)), math.degrees(math.atan2(y, x))
     km, _ = bearing_km(lat, lon); e, az = look((x, y, z))
     cache = load(PASS, {})
-    if not cache.get("list") or cache.get("ep") != el["ep"] or cache["list"][0]["end"] < now or now - cache.get("t", 0) > 6 * 3600:
+    if not cache.get("list") or cache.get("ep") != el["ep"] or cache["list"][0]["end"] < now or "dark" not in cache["list"][0] or now - cache.get("t", 0) > 6 * 3600:
         cache = {"t": now, "ep": el["ep"], "list": passes(el, now - 15 * 60)}
         save(PASS, cache)
     up = [p for p in cache["list"] if p["end"] >= now]
     return {"now": {"lat": round(lat, 1), "lon": round(lon, 1), "km": round(km), "alt": round(r - RE), "el": round(e),
-                    "az": compass(az), "sunlit": visible(el, now) if e > 0 else None},
+                    "az": compass(az), "sunlit": visible(el, now) if e > 0 else None, "dark": sun_el(now) < -6},
             "next": up[0] if up else None, "vis": next((p for p in up if p["vis"]), None)}
 
 

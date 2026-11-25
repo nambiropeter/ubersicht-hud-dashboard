@@ -28,6 +28,9 @@ if [[ ! -s $bcache || -n $(find $bcache -mmin +60) ]]; then
     END{if (c != "") print c "\t" m "\t" k}' > $bcache.tmp && [[ -s $bcache.tmp ]] && mv $bcache.tmp $bcache
 fi
 IFS=$'\t' read cycles health cond < $bcache 2>/dev/null
-up=$(uptime | sed -E 's/.*up ([^,]*),.*/\1/; s/^ +//')
+# Uptime from the boot time: "45m", "3h 59m" or "2d 4h" (uptime's own "3:59" reads like minutes:seconds)
+boot=$(sysctl -n kern.boottime | awk '{gsub(",",""); print $4}'); up=$(( $(date +%s) - boot ))
+if (( up >= 86400 )); then up="$(( up / 86400 ))d $(( up % 86400 / 3600 ))h"
+elif (( up >= 3600 )); then up="$(( up / 3600 ))h $(( up % 3600 / 60 ))m"; else up="$(( up / 60 ))m"; fi
 procs=$(ps -A | wc -l | tr -d ' ')
 print "{\"cpu\":${cpu:-0},\"mem\":${mem:-0},\"disk\":${disk:-0},\"diskFree\":\"$diskfree\",\"batt\":${batt:-0},\"charging\":$charging,\"uptime\":\"$up\",\"procs\":$procs,\"cycles\":${cycles:-null},\"health\":${health:-null},\"condition\":\"${cond:-}\"}"
