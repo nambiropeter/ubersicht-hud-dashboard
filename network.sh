@@ -39,9 +39,9 @@ if [[ $wifi != "{}" ]]; then
   ssid=$(cat $D/.ssid 2>/dev/null)
   [[ -n $ssid ]] && wifi="${wifi%\}},\"ssid\":\"${ssid//\"/}\"}"
 fi
-# data used per Wi-Fi network (wifiusage.py keeps the running totals); off Wi-Fi it just moves its baseline
+# data used per network: Wi-Fi, Ethernet and iPhone USB (wifiusage.py reads every interface; $dev = the one you're on)
 ssidt=0; [[ -n $gmac && $(cat $D/.ssid.ch 2>/dev/null) == $ch ]] && ssidt=$(stat -f %m $D/.ssid 2>/dev/null)
-usage=$(python3 $D/wifiusage.py "${wdev:-en0}" "$gmac" "$ssid" "${ssidt:-0}" 2>/dev/null); [[ -n $usage ]] || usage=null
+usage=$(python3 $D/wifiusage.py "${wdev:-en0}" "$gmac" "$ssid" "${ssidt:-0}" "$dev" 2>/dev/null); [[ -n $usage ]] || usage=null
 
 # VPN: a tunnel interface holding an IPv4 address (system utuns only have IPv6); full tunnel if it owns the default route
 vif=$(ifconfig | awk '/^[a-z]/{i=""} /^(utun|ipsec|ppp)/{i=$1; sub(":","",i)} /inet /&&i{print i; exit}')

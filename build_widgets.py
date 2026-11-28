@@ -1236,7 +1236,7 @@ const Link = ({ n, speed, testing, test, busy, setVpn }) => {
   );
 };
 
-// DATA: how much you've used on each Wi-Fi network (wifiusage.py, keyed by router, counted every refresh)
+// DATA: how much you've used on each network (Wi-Fi, Ethernet, iPhone USB) (wifiusage.py, keyed by router, counted every refresh)
 const gb = b => b >= 1e9 ? [(b / 1e9).toFixed(b >= 1e11 ? 0 : b >= 1e10 ? 1 : 2), "GB"] : b >= 1e6 ? [(b / 1e6).toFixed(b >= 1e8 ? 0 : 1), "MB"] : [Math.round(b / 1e3), "KB"];
 const gbs = b => gb(b).join(" ");
 const day = (k, t) => { const d = new Date(); d.setDate(d.getDate() - (13 - k)); return k === 13 ? "Today" : k === 12 ? "Yesterday" : d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }); };
